@@ -2,8 +2,9 @@
 //! Opt-in native device kernels. No numerical operation falls back to the host.
 //! Contiguous FP32 batched input only. LU/Cholesky/eigen n<=32, QR n<=32
 //! and m<=64, dense CG n<=128. Consult each explicit API for its shape contract.
-//! A single GPU thread owns a system; systems in a batch execute independently.
-//! This is a correctness-first small-batch kernel, not a high-throughput blocked
+//! Default baselines use one GPU thread per system; explicit `*_warp` paths
+//! cooperate within a full 32-thread block and reuse shared scratch.
+//! These are experimental small-matrix kernels, not high-throughput blocked
 //! large-matrix solver. Benchmarks must not compare its scope to full cuSOLVER.
 use std::{
     error::Error, fmt
@@ -13,7 +14,7 @@ use ruda_core::{
 };
 use ruda_kernel::{
     dsl::{
-        Runtime, calculate_cube_count_elemwise, prelude::CubeDim
+        Runtime, calculate_ruda_count_elemwise, prelude::RudaDim
     },
     tensor::{
         RudaTensor, allocation::empty_device_contiguous_dtype, readback::into_data
@@ -41,7 +42,7 @@ pub enum DeviceSolverError {
     InvalidInput(&'static str), DifferentQueue, SizeOverflow,
     MatrixFailure{
         batch: usize, info: i32
-    }, Readback(String)
+    }, Readback(String), Autotune(String)
 }
 impl fmt::Display for DeviceSolverError{
     fn fmt(&self, f: &mut fmt::Formatter<'_>)->fmt::Result{
@@ -53,6 +54,7 @@ impl fmt::Display for DeviceSolverError{
                 batch, info
             }=>write!(f, "batch {batch} failed with info={info}"),
             Self::Readback(s)=>write!(f, "status readback failed: {s}"),
+            Self::Autotune(s)=>write!(f, "solver autotune failed without replay: {s}"),
         }
     }
 }
@@ -115,6 +117,37 @@ fn validate_tensor<R: Runtime>(t: &RudaTensor<R>)->Result<(), DeviceSolverError>
 /// Call check_status_sync() before consuming or reporting any result as successful.
 pub fn cholesky_solve_batched<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>,
 options: BatchedCholeskyOptions)->Result<BatchedCholeskyResult<R>, DeviceSolverError>{
+    let (batch, _, _) = validate_cholesky(a, b, options)?;
+    if batch > 0 {
+        let mut candidates = ruda_kernel::tensor::tuning::elementwise_candidates(a);
+        #[cfg(feature = "warp-solvers")]
+        if warp::plan(a, b, crate::kernel_plan::WarpDirectKind::Cholesky).is_ok() {
+            candidates.push(("warp_cooperative_32", u32::MAX));
+        }
+        let output = ruda_kernel::tensor::tuning::execute_variants(vec![a.clone(), b.clone()],
+            "solver_cholesky_solve", format!("shift={:08x};atol={:08x};rtol={:08x}",
+                options.diagonal_shift.to_bits(), options.symmetry_absolute_tolerance.to_bits(),
+                options.symmetry_relative_tolerance.to_bits()), candidates, move |inputs, units| {
+                #[cfg(feature = "warp-solvers")]
+                let result = if units == u32::MAX { warp::cholesky_solve_batched_warp(&inputs[0], &inputs[1], options) }
+                    else { cholesky_solve_batched_inner(&inputs[0], &inputs[1], options, units) };
+                #[cfg(not(feature = "warp-solvers"))]
+                let result = cholesky_solve_batched_inner(&inputs[0], &inputs[1], options, units);
+                let result = result.map_err(|error| error.to_string())?;
+                Ok(vec![result.lower, result.solution, result.info])
+            }).map_err(DeviceSolverError::Autotune)?;
+        if let Some(outputs) = output {
+            let mut outputs = outputs.into_iter();
+            return Ok(BatchedCholeskyResult { lower: outputs.next().expect("factor output"),
+                solution: outputs.next().expect("solution output"), info: outputs.next().expect("status output"),
+                submitted_kernels: 1 });
+        }
+    }
+    cholesky_solve_batched_inner(a, b, options, 0)
+}
+
+fn validate_cholesky<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>,
+    options: BatchedCholeskyOptions) -> Result<(usize, usize, usize), DeviceSolverError> {
     validate_tensor(a)?;
     validate_tensor(b)?;
     let shape=a.meta.shape();
@@ -132,6 +165,14 @@ options: BatchedCholeskyOptions)->Result<BatchedCholeskyResult<R>, DeviceSolverE
             return Err(DeviceSolverError::InvalidInput("finite nonnegative shift/tolerances required"));
         }
     }
+    Ok((batch, n, nrhs))
+}
+
+fn cholesky_solve_batched_inner<R: Runtime>(a: &RudaTensor<R>, b: &RudaTensor<R>,
+    options: BatchedCholeskyOptions, units: u32) -> Result<BatchedCholeskyResult<R>, DeviceSolverError> {
+    let (batch, n, nrhs) = validate_cholesky(a, b, options)?;
+    let shape = a.meta.shape();
+    let rhs = b.meta.shape();
     let client=a.client.clone();
     let lower=empty_device_contiguous_dtype(client.clone(), a.device.clone(), shape.clone(), DType::F32);
     let solution=empty_device_contiguous_dtype(client.clone(), a.device.clone(), rhs.clone(), DType::F32);
@@ -141,8 +182,8 @@ options: BatchedCholeskyOptions)->Result<BatchedCholeskyResult<R>, DeviceSolverE
             lower, solution, info, submitted_kernels: 0
         });
     }
-    let dim=CubeDim::new(client.properties(), batch);
-    kernel::cholesky_solve::launch::<R>(&client, calculate_cube_count_elemwise(&client, batch, dim), dim,
+    let dim=if units == 0 { RudaDim::new(client.properties(), batch) } else { RudaDim::new_1d(units) };
+    kernel::cholesky_solve::launch::<R>(&client, calculate_ruda_count_elemwise(&client, batch, dim), dim,
     a.clone().into_array_arg(), b.clone().into_array_arg(), lower.clone().into_array_arg(),
     solution.clone().into_array_arg(), info.clone().into_array_arg(), n as u32, nrhs as u32,
     options.diagonal_shift, options.symmetry_absolute_tolerance, options.symmetry_relative_tolerance,
@@ -154,5 +195,30 @@ options: BatchedCholeskyOptions)->Result<BatchedCholeskyResult<R>, DeviceSolverE
 
 #[allow(unsafe_code)] // Generated checked kernel launch boundary only.
 mod advanced_kernel;
+
+#[allow(unsafe_code)]
+mod blocked;
+pub use blocked::cholesky_solve_blocked;
 mod advanced;
 pub use advanced::*;
+
+#[allow(unsafe_code)]
+mod large;
+pub use large::{LargeSolverOptions, lu_solve_blocked, qr_blocked};
+#[allow(unsafe_code)]
+mod jacobi;
+pub use jacobi::{DeviceJacobiOptions, DeviceSvdResult, symmetric_eigen_device, svd_device};
+#[allow(unsafe_code)]
+mod factorization;
+pub use factorization::{LuFactorResult,QrFactorResult,lu_factor_blocked,qr_factor_blocked,qr_form_q,qr_extract_r,qr_apply_q};
+#[allow(unsafe_code)]
+mod linear;
+pub use linear::{LinearSolveResult,CholeskyFactorResult,LeastSquaresResult,DeterminantResult,LuUnpackResult,lu_solve_factor,lu_inverse_factor,triangular_solve,triangular_inverse,identity_matrix,symmetric_from_triangle,cholesky_factor_blocked,cholesky_solve_factor,cholesky_inverse_factor,least_squares_qr,orthogonal_complete,determinant_from_lu,lu_unpack_factor};
+
+#[cfg(feature = "warp-solvers")]
+#[allow(unsafe_code)] // Generated checked launch boundary; no manual unsafe code.
+mod warp_kernel;
+#[cfg(feature = "warp-solvers")]
+mod warp;
+#[cfg(feature = "warp-solvers")]
+pub use warp::{cholesky_solve_batched_warp, lu_solve_batched_warp};

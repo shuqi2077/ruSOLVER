@@ -1,23 +1,28 @@
 [package]
-name = "rusolver"
+name = "ruda-solver"
 version.workspace = true
 edition.workspace = true
 license = "Apache-2.0"
 description = "Explicit scientific solvers: real/complex/sparse host algebra and opt-in small batched device kernels"
+repository = "https://github.com/shuqi2077/RUDA"
+
+[lib]
+name = "rusolver"
 
 [features]
 default = []
 sparse = ["dep:rusparse"]
 tensor = ["dep:ruda-core", "dep:ruda-kernel"]
+warp-solvers = ["tensor"]
 collective = ["dep:ruccl"]
 cuda = ["tensor", "dep:ruda-driver-cuda"]
 
 [dependencies]
-ruccl = { package = "ruCCL", path = "../ruCCL", default-features = false, optional = true }
-rusparse = { package = "ruSPARSE", path = "../ruSPARSE", default-features = false, optional = true }
-ruda-core = { path = "../ruda-core", default-features = false, features = ["std", "tensor-host-data"], optional = true }
-ruda-kernel = { path = "../ruda-kernel", default-features = false, features = ["frontend-std", "library", "device-tensor"], optional = true }
-ruda-driver-cuda = { path = "../ruda-driver-cuda", features = ["direct-ptx"], optional = true }
+ruccl = { version = "0.21.76", package = "ruCCL", path = "../ruCCL", default-features = false, optional = true }
+rusparse = { version = "0.1.96", package = "ruSPARSE", path = "../ruSPARSE", default-features = false, optional = true }
+ruda-core = { version = "0.1.10", path = "../ruda-core", default-features = false, features = ["std", "tensor-host-data"], optional = true }
+ruda-kernel = { version = "0.1.43", path = "../ruda-kernel", default-features = false, features = ["frontend-std", "library", "device-tensor"], optional = true }
+ruda-driver-cuda = { version = "0.1.96", path = "../ruda-driver-cuda", features = ["direct-ptx"], optional = true }
 
 [lints.rust]
 unsafe_code = "deny"
@@ -59,3 +64,16 @@ path = "examples/advanced_solver.rs"
 name = "solver-cuda-advanced"
 path = "examples/solver_cuda_advanced.rs"
 required-features = ["cuda"]
+
+[dev-dependencies]
+serde_json = "1"
+
+[[test]]
+name = "device_warp"
+path = "tests/device_warp.rs"
+required-features = ["cuda", "warp-solvers"]
+
+[[example]]
+name = "solver-warp-bench"
+path = "examples/solver_warp_bench.rs"
+required-features = ["cuda", "warp-solvers"]
