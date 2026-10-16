@@ -53,8 +53,8 @@ fn tail_norm<F: Float>(real: &Array<F>, imag: &Array<F>, base: usize, m: usize, 
     let mut scale = F::new(0.0); let mut sum = F::new(0.0); let mut row = j + 1 + lane;
     while row < m {
         let p = base + row * n + j;
-        let (sr, qr) = combine_norm(scale, sum, real[p].abs(), F::new(1.0));
-        let (si, qi) = combine_norm(sr, qr, imag[p].abs(), F::new(1.0));
+        let (sr, qr) = combine_norm::<F>(scale, sum, real[p].abs(), F::new(1.0));
+        let (si, qi) = combine_norm::<F>(sr, qr, imag[p].abs(), F::new(1.0));
         scale = si; sum = qi; row += 256;
     }
     let mut scales = SharedMemory::<F>::new(256); let mut sums = SharedMemory::<F>::new(256);
@@ -62,18 +62,18 @@ fn tail_norm<F: Float>(real: &Array<F>, imag: &Array<F>, base: usize, m: usize, 
     let mut width = 128usize;
     while width > 0 {
         if lane < width {
-            let (s, q) = combine_norm(scales[lane], sums[lane], scales[lane + width], sums[lane + width]);
+            let (s, q) = combine_norm::<F>(scales[lane], sums[lane], scales[lane + width], sums[lane + width]);
             scales[lane] = s; sums[lane] = q;
         }
         sync_ruda(); width /= 2;
     }
-    let value = scales[0] * sums[0].sqrt(); sync_ruda(); value
+    let value = scales[0usize] * sums[0usize].sqrt(); sync_ruda(); value
 }
 
 #[ruda]
 fn beta<F: Float>(ar: F, ai: F, norm: F, #[comptime] wide: bool) -> F {
-    let (s, q) = combine_norm(ar.abs(), F::new(1.0), ai.abs(), F::new(1.0));
-    let (s, q) = combine_norm(s, q, norm, F::new(1.0));
+    let (s, q) = combine_norm::<F>(ar.abs(), F::new(1.0), ai.abs(), F::new(1.0));
+    let (s, q) = combine_norm::<F>(s, q, norm, F::new(1.0));
     let mut negative = false;
     if comptime!(wide) { negative = (u64::reinterpret(ar) >> 63u32) != 0u64; }
     else { negative = (u32::reinterpret(ar) >> 31u32) != 0u32; }
@@ -90,11 +90,11 @@ pub(super) fn panel<F: Float>(
     let lane = UNIT_POS as usize; let m = rows as usize; let n = cols as usize; let j = column as usize;
     let base = batch * m * n; let diagonal = base + j * n + j; let t = batch * m.min(n) + j;
     let mut ar = real[diagonal]; let mut ai = imag[diagonal];
-    let mut norm = tail_norm(real, imag, base, m, n, j);
+    let mut norm = tail_norm::<F>(real, imag, base, m, n, j);
     if norm == F::new(0.0) && ai == F::new(0.0) {
         if lane == 0 { tau_real[t] = F::new(0.0); tau_imag[t] = F::new(0.0); }
     } else {
-        let mut b = beta(ar, ai, norm, wide);
+        let mut b = beta::<F>(ar, ai, norm, wide);
         let mut safmin = F::cast_from(f32::MIN_POSITIVE / (f32::EPSILON / 2.0));
         if comptime!(wide) { safmin = F::cast_from(f64::MIN_POSITIVE / (f64::EPSILON / 2.0)); }
         let reciprocal = F::new(1.0) / safmin; let mut count = 0u32;
@@ -107,11 +107,11 @@ pub(super) fn panel<F: Float>(
                 ar *= reciprocal; ai *= reciprocal; b *= reciprocal; count += 1;
                 sync_ruda();
             }
-            norm = tail_norm(real, imag, base, m, n, j);
-            b = beta(ar, ai, norm, wide);
+            norm = tail_norm::<F>(real, imag, base, m, n, j);
+            b = beta::<F>(ar, ai, norm, wide);
         }
         let tr = (b - ar) / b; let ti = -ai / b;
-        let (rr, ri) = divide(F::new(1.0), F::new(0.0), ar - b, ai, wide);
+        let (rr, ri) = divide::<F>(F::new(1.0), F::new(0.0), ar - b, ai, wide);
         let mut row = j + 1 + lane;
         while row < m {
             let p = base + row * n + j; let r = real[p]; let i = imag[p];
@@ -151,10 +151,10 @@ pub(super) fn apply<F: Float>(
     reals[lane] = dr; imags[lane] = di; sync_ruda();
     let mut step = 128usize;
     while step > 0 {
-        if lane < step { reals[lane] += reals[lane + step]; imags[lane] += imags[lane + step]; }
+        if lane < step { reals[lane] = reals[lane] + reals[lane + step]; imags[lane] = imags[lane] + imags[lane + step]; }
         sync_ruda(); step /= 2;
     }
-    let wr = tr * reals[0] - ti * imags[0]; let wi = tr * imags[0] + ti * reals[0];
+    let wr = tr * reals[0usize] - ti * imags[0usize]; let wi = tr * imags[0usize] + ti * reals[0usize];
     row = j + lane;
     while row < m {
         let mut vr = F::new(1.0); let mut vi = F::new(0.0);
@@ -195,8 +195,8 @@ pub(super) fn residuals<F: Float>(real: &Array<F>, imag: &Array<F>, out: &mut Ar
     let mut sums = SharedMemory::<F>::new(256); sums[lane] = value; sync_ruda();
     let mut width = 128usize;
     while width > 0 {
-        if lane < width { sums[lane] += sums[lane + width]; }
+        if lane < width { sums[lane] = sums[lane] + sums[lane + width]; }
         sync_ruda(); width /= 2;
     }
-    if lane == 0 { out[work] = sums[0]; }
+    if lane == 0 { out[work] = sums[0usize]; }
 }

@@ -26,11 +26,11 @@ pub struct Svd<R: Runtime> {
 fn prepare<R: Runtime>(a: &Matrix<R>, work: &Matrix<R>, info: &RudaTensor<R>, sweeps: &RudaTensor<R>, hermitian: bool, upper: bool, adjoint: bool) -> usize {
     let sizes = work.real.meta.shape(); let (batch, m, n) = (sizes[0], sizes[1], sizes[2]);
     if batch == 0 { return 0; }
-    macro_rules! run { ($f:ty) => {
+    macro_rules! run { ($f:ty) => {{
         kernels::prepare::launch::<$f, R>(&a.real.client, grid(batch), RudaDim::new_1d(256),
             a.real.clone().into_tensor_arg(), a.imag.clone().into_tensor_arg(), work.real.clone().into_array_arg(), work.imag.clone().into_array_arg(),
             info.clone().into_array_arg(), sweeps.clone().into_array_arg(), m as u32, n as u32, hermitian, upper, adjoint);
-    }; }
+    }}; }
     match a.real.dtype { DType::F32 => run!(f32), DType::F64 => run!(f64), _ => unreachable!() }
     1
 }
@@ -48,10 +48,10 @@ fn sorted<R: Runtime>(a: &Matrix<R>, values: &RudaTensor<R>, n: usize, descendin
     let out = alloc(&a.real, values.meta.shape().clone(), a.real.dtype);
     let permutation = alloc(&a.real, values.meta.shape().clone(), DType::U32); let count = values.meta.num_elements();
     if count == 0 { return (out, permutation, 0); }
-    macro_rules! run { ($f:ty) => {
+    macro_rules! run { ($f:ty) => {{
         kernels::sort_values::launch::<$f, R>(&a.real.client, grid(count.div_ceil(256)), RudaDim::new_1d(256),
             values.clone().into_array_arg(), out.clone().into_array_arg(), permutation.clone().into_array_arg(), n as u32, descending);
-    }; }
+    }}; }
     match a.real.dtype { DType::F32 => run!(f32), DType::F64 => run!(f64), _ => unreachable!() }
     (out, permutation, 1)
 }
@@ -59,11 +59,11 @@ fn sorted<R: Runtime>(a: &Matrix<R>, values: &RudaTensor<R>, n: usize, descendin
 fn gather<R: Runtime>(a: &Matrix<R>, permutation: &RudaTensor<R>, info: &RudaTensor<R>) -> Result<complex_qr::Transform<R>, DeviceSolverError> {
     let (batch, m, n) = shape(a)?; let out = empty(a, &[batch, m, n])?; let count = out.real.meta.num_elements();
     if count == 0 { return Ok(complex_qr::Transform { value: out, submitted_kernels: 0 }); }
-    macro_rules! run { ($f:ty) => {
+    macro_rules! run { ($f:ty) => {{
         kernels::gather::launch::<$f, R>(&a.real.client, grid(count.div_ceil(256)), RudaDim::new_1d(256),
             a.real.clone().into_array_arg(), a.imag.clone().into_array_arg(), out.real.clone().into_array_arg(), out.imag.clone().into_array_arg(),
             permutation.clone().into_array_arg(), info.clone().into_array_arg(), m as u32, n as u32);
-    }; }
+    }}; }
     match a.real.dtype { DType::F32 => run!(f32), DType::F64 => run!(f64), _ => unreachable!() }
     Ok(complex_qr::Transform { value: out, submitted_kernels: 1 })
 }
@@ -72,7 +72,7 @@ pub fn eigh<R: Runtime>(a: &Matrix<R>, upper: bool, vectors: bool, o: DeviceJaco
     let (batch, n, cols) = shape(a)?; options(o)?;
     if n != cols { return Err(DeviceSolverError::InvalidInput("square Hermitian matrix required")); }
     let work = empty(a, &[batch, n, n])?;
-    let v = empty(a, if vectors { &[batch, n, n] } else { &[0, 0, 0] })?;
+    let v = empty(a, &if vectors { [batch, n, n] } else { [0, 0, 0] })?;
     let values = alloc(&a.real, [batch, n], a.real.dtype); let info = alloc(&a.real, [batch], DType::I32); let sweeps = alloc(&a.real, [batch], DType::I32);
     let mut submitted = prepare(a, &work, &info, &sweeps, true, upper, false);
     if vectors { submitted += identity(a, &v); }
@@ -130,11 +130,11 @@ fn complete<R: Runtime>(a: &Matrix<R>, values: &RudaTensor<R>, info: &RudaTensor
     result.submitted_kernels += qr.submitted_kernels;
     let count = result.value.real.meta.num_elements();
     if count != 0 {
-        macro_rules! run { ($f:ty) => {
+        macro_rules! run { ($f:ty) => {{
             kernels::complete::launch::<$f, R>(&a.real.client, grid(count.div_ceil(256)), RudaDim::new_1d(256),
                 a.real.clone().into_array_arg(), a.imag.clone().into_array_arg(), result.value.real.clone().into_array_arg(), result.value.imag.clone().into_array_arg(),
                 values.clone().into_array_arg(), info.clone().into_array_arg(), m as u32, n as u32, columns as u32);
-        }; }
+        }}; }
         match a.real.dtype { DType::F32 => run!(f32), DType::F64 => run!(f64), _ => unreachable!() }
         result.submitted_kernels += 1;
     }
@@ -148,12 +148,12 @@ pub fn svd<R: Runtime>(a: &Matrix<R>, full: bool, vectors: bool, o: DeviceJacobi
     let values = alloc(&a.real, [batch, cols], a.real.dtype);
     let mut submitted = prepare(a, &work, &info, &sweeps, false, false, wide);
     if batch == 0 || cols == 0 {
-        let u = empty(a, if vectors { &[batch, m, if full { m } else { cols }] } else { &[0, 0, 0] })?;
-        let vh = empty(a, if vectors { &[batch, if full { n } else { cols }, n] } else { &[0, 0, 0] })?;
+        let u = empty(a, &if vectors { [batch, m, if full { m } else { cols }] } else { [0, 0, 0] })?;
+        let vh = empty(a, &if vectors { [batch, if full { n } else { cols }, n] } else { [0, 0, 0] })?;
         if vectors && full { submitted += identity(a, &u) + identity(a, &vh); }
         return Ok(Svd { u, singular_values: values, vh, info, sweeps, submitted_kernels: submitted });
     }
-    let v = empty(a, if vectors { &[batch, cols, cols] } else { &[0, 0, 0] })?;
+    let v = empty(a, &if vectors { [batch, cols, cols] } else { [0, 0, 0] })?;
     if vectors { submitted += identity(a, &v); }
     let slots = cols + cols % 2; let pairs = slots / 2; let rounds = slots - 1;
     super::elements(&[batch, rounds, pairs])?;

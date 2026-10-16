@@ -24,7 +24,7 @@ fn maximum<F: Float>(x: F) -> F {
         if lane < width { work[lane] = F::max(work[lane], work[lane + width]); }
         sync_ruda(); width /= 2;
     }
-    let result = work[0]; sync_ruda(); result
+    let result = work[0usize]; sync_ruda(); result
 }
 
 #[ruda]
@@ -32,10 +32,10 @@ fn sum<F: Float>(x: F) -> F {
     let lane = UNIT_POS as usize; let mut work = SharedMemory::<F>::new(256);
     work[lane] = x; sync_ruda(); let mut width = 128usize;
     while width > 0 {
-        if lane < width { work[lane] += work[lane + width]; }
+        if lane < width { work[lane] = work[lane] + work[lane + width]; }
         sync_ruda(); width /= 2;
     }
-    let result = work[0]; sync_ruda(); result
+    let result = work[0usize]; sync_ruda(); result
 }
 
 #[ruda(launch)]
@@ -57,9 +57,9 @@ pub(super) fn prepare<F: Float>(
         if !hermitian || row != col { im = ai[batch * ai.stride(0) + sr * ai.stride(1) + sc * ai.stride(2)]; }
         if conjugate { im = -im; }
         real[batch * m * n + i] = r; imag[batch * m * n + i] = im;
-        if bad(r) || bad(im) { invalid = F::new(1.0); } i += 256;
+        if bad::<F>(r) || bad::<F>(im) { invalid = F::new(1.0); } i += 256;
     }
-    let invalid = maximum(invalid);
+    let invalid = maximum::<F>(invalid);
     if lane == 0 {
         let mut code = 1i32; if m == 0 || n == 0 { code = 0; } if invalid != F::new(0.0) { code = -1; }
         info[batch] = code; sweeps[batch] = 0;
@@ -124,7 +124,7 @@ pub(super) fn eigen_rotate<F: Float>(
 }
 
 #[ruda(launch)]
-pub(super) fn eigen_check<F: Float>(
+pub(super) fn eigen_check<F: Float + RudaElement>(
     real: &Array<F>, imag: &Array<F>, info: &mut Array<i32>, sweeps: &mut Array<i32>,
     order: u32, sweep: u32, atol: F, rtol: F,
 ) {
@@ -133,9 +133,9 @@ pub(super) fn eigen_check<F: Float>(
     let mut i = lane; let mut scale = F::new(0.0); let mut invalid = F::new(0.0);
     while i < n * n {
         let r = real[base + i]; let im = imag[base + i];
-        scale = F::max(scale, F::max(r.abs(), im.abs())); if bad(r) || bad(im) { invalid = F::new(1.0); } i += 256;
+        scale = F::max(scale, F::max(r.abs(), im.abs())); if bad::<F>(r) || bad::<F>(im) { invalid = F::new(1.0); } i += 256;
     }
-    let scale = maximum(scale); let invalid = maximum(invalid);
+    let scale = maximum::<F>(scale); let invalid = maximum::<F>(invalid);
     let mut off = F::new(0.0); let mut all = F::new(0.0);
     if scale > F::new(0.0) && invalid == F::new(0.0) {
         i = lane;
@@ -144,7 +144,7 @@ pub(super) fn eigen_check<F: Float>(
             all = F::max(all, value); if i / n != i % n { off = F::max(off, value); } i += 256;
         }
     }
-    let off = maximum(off); let all = maximum(all);
+    let off = maximum::<F>(off); let all = maximum::<F>(all);
     if lane == 0 {
         let mut code = 1i32;
         if invalid != F::new(0.0) { code = -3; }
@@ -154,7 +154,7 @@ pub(super) fn eigen_check<F: Float>(
 }
 
 #[ruda(launch)]
-pub(super) fn svd_pair<F: Float>(
+pub(super) fn svd_pair<F: Float + RudaElement>(
     real: &mut Array<F>, imag: &mut Array<F>, vr: &mut Array<F>, vi: &mut Array<F>,
     flags: &mut Array<i32>, info: &Array<i32>, rows: u32, cols: u32, round: u32,
     atol: F, rtol: F, #[comptime] apply: bool, #[comptime] vectors: bool,
@@ -173,9 +173,9 @@ pub(super) fn svd_pair<F: Float>(
         let pr = real[base + row * n + p]; let pi = imag[base + row * n + p];
         let qr = real[base + row * n + q]; let qi = imag[base + row * n + q];
         sp = F::max(sp, F::max(pr.abs(), pi.abs())); sq = F::max(sq, F::max(qr.abs(), qi.abs()));
-        if bad(pr) || bad(pi) || bad(qr) || bad(qi) { invalid = F::new(1.0); } row += 256;
+        if bad::<F>(pr) || bad::<F>(pi) || bad::<F>(qr) || bad::<F>(qi) { invalid = F::new(1.0); } row += 256;
     }
-    let mut sp = maximum(sp); let mut sq = maximum(sq); let invalid = maximum(invalid);
+    let mut sp = maximum::<F>(sp); let mut sq = maximum::<F>(sq); let invalid = maximum::<F>(invalid);
     if invalid != F::new(0.0) || sp == F::new(0.0) || sq == F::new(0.0) {
         if !apply && lane == 0 { let mut code = 0; if invalid != F::new(0.0) { code = -3; } flags[flag] = code; }
         terminate!();
@@ -187,14 +187,14 @@ pub(super) fn svd_pair<F: Float>(
         a += pr * pr + pi * pi; b += qr * qr + qi * qi; gr += pr * qr + pi * qi; gi += pr * qi - pi * qr;
         row += 256;
     }
-    let mut a = sum(a).sqrt(); let mut b = sum(b).sqrt(); let gr = sum(gr); let mut gi = sum(gi);
+    let mut a = sum::<F>(a).sqrt(); let mut b = sum::<F>(b).sqrt(); let gr = sum::<F>(gr); let mut gi = sum::<F>(gi);
     let g = gr.hypot(gi); let rho = g / a / b;
     let bound = rtol + atol / sp / sq / a / b;
     if !apply {
-        if lane == 0 { let mut code = 0; if rho > bound { code = 1; } if bad(rho) { code = -3; } flags[flag] = code; }
+        if lane == 0 { let mut code = 0; if rho > bound { code = 1; } if bad::<F>(rho) { code = -3; } flags[flag] = code; }
         terminate!();
     }
-    if rho <= bound || bad(rho) { terminate!(); }
+    if rho <= bound || bad::<F>(rho) { terminate!(); }
     let scale = F::max(sp, sq);
     if sp / scale * a < sq / scale * b {
         p = qq; q = pp; let temporary = sp; sp = sq; sq = temporary; let temporary = a; a = b; b = temporary; gi = -gi;
@@ -234,8 +234,8 @@ pub(super) fn svd_check<F: Float>(
     let count = (n + n % 2 - 1) * ((n + n % 2) / 2); let mut i = lane; let mut invalid = F::new(0.0); let mut active = F::new(0.0);
     while i < count { let code = flags[batch * count + i]; if code < 0 { invalid = F::new(1.0); } if code > 0 { active = F::new(1.0); } i += 256; }
     i = lane;
-    while i < m * n { if bad(real[batch * m * n + i]) || bad(imag[batch * m * n + i]) { invalid = F::new(1.0); } i += 256; }
-    let invalid = maximum(invalid); let active = maximum(active);
+    while i < m * n { if bad::<F>(real[batch * m * n + i]) || bad::<F>(imag[batch * m * n + i]) { invalid = F::new(1.0); } i += 256; }
+    let invalid = maximum::<F>(invalid); let active = maximum::<F>(active);
     if lane == 0 { let mut code = 0; if active != F::new(0.0) { code = 1; } if invalid != F::new(0.0) { code = -3; }
         info[batch] = code; sweeps[batch] = sweep as i32; }
 }
@@ -260,17 +260,17 @@ pub(super) fn svd_values<F: Float>(real: &mut Array<F>, imag: &mut Array<F>, val
     if info[batch] == 0 {
         while row < m {
             let p = (batch * m + row) * n + col;
-            let (s, q) = combine_norm(scale, norm, real[p].abs(), F::new(1.0));
-            let (s, q) = combine_norm(s, q, imag[p].abs(), F::new(1.0)); scale = s; norm = q; row += 256;
+            let (s, q) = combine_norm::<F>(scale, norm, real[p].abs(), F::new(1.0));
+            let (s, q) = combine_norm::<F>(s, q, imag[p].abs(), F::new(1.0)); scale = s; norm = q; row += 256;
         }
     }
     let mut scales = SharedMemory::<F>::new(256); let mut norms = SharedMemory::<F>::new(256);
     scales[lane] = scale; norms[lane] = norm; sync_ruda(); let mut width = 128usize;
     while width > 0 {
-        if lane < width { let (s, q) = combine_norm(scales[lane], norms[lane], scales[lane + width], norms[lane + width]); scales[lane] = s; norms[lane] = q; }
+        if lane < width { let (s, q) = combine_norm::<F>(scales[lane], norms[lane], scales[lane + width], norms[lane + width]); scales[lane] = s; norms[lane] = q; }
         sync_ruda(); width /= 2;
     }
-    scale = scales[0]; norm = norms[0].sqrt(); if lane == 0 { values[work] = scale * norm; }
+    scale = scales[0usize]; norm = norms[0usize].sqrt(); if lane == 0 { values[work] = scale * norm; }
     row = lane;
     while row < m {
         let p = (batch * m + row) * n + col; let mut r = F::new(0.0); let mut i = F::new(0.0);

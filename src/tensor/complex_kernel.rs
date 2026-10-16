@@ -66,12 +66,12 @@ pub(super) fn divide<F: Float>(a: F, b: F, c: F, d: F, #[comptime] wide: bool) -
     let mut real = F::new(0.0); let mut imag = F::new(0.0);
     if d.abs() <= c.abs() {
         let ratio = dd / cc; let reciprocal = F::new(1.0) / (cc + dd * ratio);
-        real = ladiv2(aa, bb, cc, dd, ratio, reciprocal);
-        imag = ladiv2(bb, -aa, cc, dd, ratio, reciprocal);
+        real = ladiv2::<F>(aa, bb, cc, dd, ratio, reciprocal);
+        imag = ladiv2::<F>(bb, -aa, cc, dd, ratio, reciprocal);
     } else {
         let ratio = cc / dd; let reciprocal = F::new(1.0) / (dd + cc * ratio);
-        real = ladiv2(bb, aa, dd, cc, ratio, reciprocal);
-        imag = -ladiv2(aa, -bb, dd, cc, ratio, reciprocal);
+        real = ladiv2::<F>(bb, aa, dd, cc, ratio, reciprocal);
+        imag = -ladiv2::<F>(aa, -bb, dd, cc, ratio, reciprocal);
     }
     (real * scale, imag * scale)
 }
@@ -139,7 +139,7 @@ pub(super) fn lu_panel<F: Float>(
             }
             sync_ruda(); width /= 2;
         }
-        chosen = indices[0] as usize;
+        chosen = indices[0usize] as usize;
     }
     if lane == 0 {
         pivots[batch * m.min(n) + j] = chosen as i32;
@@ -161,7 +161,7 @@ pub(super) fn lu_panel<F: Float>(
     if dr != F::new(0.0) || di != F::new(0.0) {
         let mut row = j + 1 + lane;
         while row < m {
-            let p = base + row * n + j; let (r, i) = divide(real[p], imag[p], dr, di, wide);
+            let p = base + row * n + j; let (r, i) = divide::<F>(real[p], imag[p], dr, di, wide);
             real[p] = r; imag[p] = i; row += 256;
         }
     }
@@ -234,7 +234,7 @@ fn substitution<F: Float>(
             let a = ar[matrix + row * n + row]; let mut b = ai[matrix + row * n + row];
             if comptime!(conjugate) { b = -b; }
             if a == F::new(0.0) && b == F::new(0.0) && (code == 0 || ((row + 1) as i32) < code) { code = (row + 1) as i32; }
-            let (rr, ii) = divide(r, i, a, b, wide); r = rr; i = ii;
+            let (rr, ii) = divide::<F>(r, i, a, b, wide); r = rr; i = ii;
         }
         xr[p] = r; xi[p] = i;
     }

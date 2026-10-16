@@ -18,7 +18,7 @@ pub fn eig<R: Runtime>(a: &Matrix<R>, vectors: bool) -> Result<Eigen<R>, DeviceS
     if n != cols { return Err(DeviceSolverError::InvalidInput("general eigen decomposition requires square matrices")); }
     super::elements(&[batch, 2])?;
     let work = empty(a, &[batch, n, n])?;
-    let z = empty(a, if vectors { &[batch, n, n] } else { &[0, 0, 0] })?;
+    let z = empty(a, &if vectors { [batch, n, n] } else { [0, 0, 0] })?;
     let scratch = empty(a, &[batch, 1, n])?;
     let values = empty(a, &[batch, 1, n])?;
     let balance = alloc(&a.real, [batch, n], a.real.dtype);

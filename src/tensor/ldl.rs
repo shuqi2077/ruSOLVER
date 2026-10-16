@@ -18,9 +18,9 @@ pub fn real_parts<R: Runtime>(a: &RudaTensor<R>) -> Result<(Matrix<R>, usize), D
     let real = into_contiguous(a.clone()); let imag = alloc(&real, real.meta.shape().clone(), real.dtype);
     let count = real.meta.num_elements(); let mut submitted = 0;
     if count != 0 {
-        macro_rules! run { ($f:ty) => {
+        macro_rules! run { ($f:ty) => {{
             kernels::zero::launch::<$f, R>(&real.client, grid(count.div_ceil(256)), RudaDim::new_1d(256), imag.clone().into_array_arg());
-        }; }
+        }}; }
         match real.dtype { DType::F32 => run!(f32), DType::F64 => run!(f64), _ => unreachable!() }
         submitted += 1;
     }
@@ -37,17 +37,17 @@ pub fn factor<R: Runtime>(a: &Matrix<R>, hermitian: bool) -> Result<Factor<R>, D
     let state = alloc(&a.real, [batch, 4], DType::I32); let work = empty(a, &[batch, n, 2])?;
     let count = result.packed.real.meta.num_elements().max(state.meta.num_elements());
     if count != 0 {
-        macro_rules! prepare { ($f:ty) => {
+        macro_rules! prepare { ($f:ty) => {{
             kernels::prepare::launch::<$f, R>(&a.real.client, grid(count.div_ceil(256)), RudaDim::new_1d(256),
                 a.real.clone().into_tensor_arg(), a.imag.clone().into_tensor_arg(), result.packed.real.clone().into_array_arg(), result.packed.imag.clone().into_array_arg(),
                 state.clone().into_array_arg(), result.info.clone().into_array_arg(), n as u32, hermitian);
-        }; }
+        }}; }
         match a.real.dtype { DType::F32 => prepare!(f32), DType::F64 => prepare!(f64), _ => unreachable!() }
         result.submitted_kernels += 1;
     }
     if batch == 0 || n == 0 { return Ok(result); }
     for _ in 0..n {
-        macro_rules! run { ($f:ty, $wide:expr) => {
+        macro_rules! run { ($f:ty, $wide:expr) => {{
             kernels::panel::launch::<$f, R>(&a.real.client, grid(batch), RudaDim::new_1d(256),
                 result.packed.real.clone().into_array_arg(), result.packed.imag.clone().into_array_arg(), result.pivots.clone().into_array_arg(),
                 state.clone().into_array_arg(), result.info.clone().into_array_arg(), n as u32, hermitian);
@@ -60,7 +60,7 @@ pub fn factor<R: Runtime>(a: &Matrix<R>, hermitian: bool) -> Result<Factor<R>, D
             kernels::advance::launch::<$f, R>(&a.real.client, grid(batch), RudaDim::new_1d(256),
                 result.packed.real.clone().into_array_arg(), result.packed.imag.clone().into_array_arg(), work.real.clone().into_array_arg(), work.imag.clone().into_array_arg(),
                 state.clone().into_array_arg(), n as u32);
-        }; }
+        }}; }
         match a.real.dtype { DType::F32 => run!(f32, false), DType::F64 => run!(f64, true), _ => unreachable!() }
         result.submitted_kernels += 4;
     }
@@ -79,12 +79,12 @@ pub fn solve<R: Runtime>(a: &Matrix<R>, pivots: &RudaTensor<R>, b: &Matrix<R>, h
     let mut result = Solution { solution: empty(b, &[batch, n, nrhs])?, info: alloc(&a.real, [batch], DType::I32), submitted_kernels: 0 };
     result.submitted_kernels += initialize(b, &result.solution, &result.info, 0, false);
     if batch != 0 && n != 0 && nrhs != 0 {
-        macro_rules! run { ($f:ty, $wide:expr) => {
+        macro_rules! run { ($f:ty, $wide:expr) => {{
             kernels::solve::launch::<$f, R>(&a.real.client, grid((batch * nrhs).div_ceil(256)), RudaDim::new_1d(256),
                 a.real.clone().into_array_arg(), a.imag.clone().into_array_arg(), pivots.clone().into_array_arg(),
                 result.solution.real.clone().into_array_arg(), result.solution.imag.clone().into_array_arg(), result.info.clone().into_array_arg(),
                 n as u32, nrhs as u32, hermitian, $wide);
-        }; }
+        }}; }
         match a.real.dtype { DType::F32 => run!(f32, false), DType::F64 => run!(f64, true), _ => unreachable!() }
         result.submitted_kernels += 1;
     }

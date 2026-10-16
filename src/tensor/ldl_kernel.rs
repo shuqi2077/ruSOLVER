@@ -47,12 +47,12 @@ fn block_solve<F: Float>(
 ) -> (F, F, F, F) {
     let mut lower_i = ei; if comptime!(hermitian && row) { lower_i = -lower_i; }
     let mut upper_i = lower_i; if comptime!(hermitian) { upper_i = -upper_i; }
-    let (a, b) = divide(ar, ai, er, upper_i, wide); let (c, d) = divide(dr, di, er, lower_i, wide);
-    let (x, y) = divide(ur, ui, er, upper_i, wide); let (z, w) = divide(vr, vi, er, lower_i, wide);
-    let (den_r, den_i) = product(a, b, c, d); let den_r = den_r - F::new(1.0);
-    let (p, q) = product(c, d, x, y); let (r, s) = product(a, b, z, w);
-    let (xr, xi) = divide(p - z, q - w, den_r, den_i, wide);
-    let (yr, yi) = divide(r - x, s - y, den_r, den_i, wide); (xr, xi, yr, yi)
+    let (a, b) = divide::<F>(ar, ai, er, upper_i, wide); let (c, d) = divide::<F>(dr, di, er, lower_i, wide);
+    let (x, y) = divide::<F>(ur, ui, er, upper_i, wide); let (z, w) = divide::<F>(vr, vi, er, lower_i, wide);
+    let (den_r, den_i) = product::<F>(a, b, c, d); let den_r = den_r - F::new(1.0);
+    let (p, q) = product::<F>(c, d, x, y); let (r, s) = product::<F>(a, b, z, w);
+    let (xr, xi) = divide::<F>(p - z, q - w, den_r, den_i, wide);
+    let (yr, yi) = divide::<F>(r - x, s - y, den_r, den_i, wide); (xr, xi, yr, yi)
 }
 
 #[ruda(launch)]
@@ -95,7 +95,7 @@ pub(super) fn panel<F: Float>(real: &mut Array<F>, imag: &mut Array<F>, pivots: 
         }
         sync_ruda(); width /= 2;
     }
-    let colmax = scores[0]; let imax = indices[0] as usize;
+    let colmax = scores[0usize]; let imax = indices[0usize] as usize;
     let active = (absakk != F::new(0.0) || colmax != F::new(0.0)) && absakk == absakk;
     let alpha = (F::new(1.0) + F::new(17.0).sqrt()) / F::new(8.0); let mut kp = k; let mut step = 1usize;
     if active && !(absakk >= alpha * colmax) {
@@ -112,7 +112,7 @@ pub(super) fn panel<F: Float>(real: &mut Array<F>, imag: &mut Array<F>, pivots: 
             if lane < width { let other = scores[lane + width]; if other > scores[lane] || other != other { scores[lane] = other; } }
             sync_ruda(); width /= 2;
         }
-        let rowmax = scores[0]; let mut absaimax = real[base + imax * n + imax].abs();
+        let rowmax = scores[0usize]; let mut absaimax = real[base + imax * n + imax].abs();
         if comptime!(!hermitian) { absaimax += imag[base + imax * n + imax].abs(); }
         if absakk >= alpha * colmax * (colmax / rowmax) { kp = k; }
         else if absaimax >= alpha * rowmax { kp = imax; }
@@ -160,10 +160,10 @@ pub(super) fn weights<F: Float>(ar: &Array<F>, ai: &Array<F>, wr: &mut Array<F>,
     if state[batch * 4 + 3] == 0 || row < k + step { terminate!(); }
     let base = batch * n * n; let d = base + k * n + k; let u = base + row * n + k;
     if step == 1 {
-        let (r, i) = divide(ar[u], ai[u], ar[d], ai[d], wide); wr[2 * p] = r; wi[2 * p] = i;
+        let (r, i) = divide::<F>(ar[u], ai[u], ar[d], ai[d], wide); wr[2 * p] = r; wi[2 * p] = i;
     } else {
         let d2 = base + (k + 1) * n + k + 1; let e = base + (k + 1) * n + k;
-        let (r, i, s, j) = block_solve(ar[d], ai[d], ar[d2], ai[d2], ar[e], ai[e], ar[u], ai[u], ar[u + 1], ai[u + 1], hermitian, true, wide);
+        let (r, i, s, j) = block_solve::<F>(ar[d], ai[d], ar[d2], ai[d2], ar[e], ai[e], ar[u], ai[u], ar[u + 1], ai[u + 1], hermitian, true, wide);
         wr[2 * p] = r; wi[2 * p] = i; wr[2 * p + 1] = s; wi[2 * p + 1] = j;
     }
 }
@@ -177,7 +177,7 @@ pub(super) fn trailing<F: Float>(real: &mut Array<F>, imag: &mut Array<F>, wr: &
     for offset in 0..step {
         let a = base + row * n + k + offset; let w = (batch * n + col) * 2 + offset;
         let mut ii = wi[w]; if comptime!(hermitian) { ii = -ii; }
-        let (r, i) = product(real[a], imag[a], wr[w], ii); real[p] -= r; imag[p] -= i;
+        let (r, i) = product::<F>(real[a], imag[a], wr[w], ii); real[p] -= r; imag[p] -= i;
     }
     if hermitian && row == col { imag[p] = F::new(0.0); }
 }
@@ -229,16 +229,16 @@ pub(super) fn solve<F: Float>(ar: &Array<F>, ai: &Array<F>, pivots: &Array<i32>,
             let p = base + row * nr + col;
             for offset in 0..step {
                 let a = matrix + row * n + k + offset; let b = base + (k + offset) * nr + col;
-                let (r, i) = product(ar[a], ai[a], real[b], imag[b]); real[p] -= r; imag[p] -= i;
+                let (r, i) = product::<F>(ar[a], ai[a], real[b], imag[b]); real[p] -= r; imag[p] -= i;
             }
         }
         let d = matrix + k * n + k; let b = base + k * nr + col;
         if step == 1 {
             let mut di = ai[d]; if comptime!(hermitian) { di = F::new(0.0); }
-            let (r, i) = divide(real[b], imag[b], ar[d], di, wide); real[b] = r; imag[b] = i;
+            let (r, i) = divide::<F>(real[b], imag[b], ar[d], di, wide); real[b] = r; imag[b] = i;
         } else {
             let d2 = matrix + (k + 1) * n + k + 1; let e = matrix + (k + 1) * n + k;
-            let (r, i, s, j) = block_solve(ar[d], ai[d], ar[d2], ai[d2], ar[e], ai[e], real[b], imag[b], real[b + nr], imag[b + nr], hermitian, false, wide);
+            let (r, i, s, j) = block_solve::<F>(ar[d], ai[d], ar[d2], ai[d2], ar[e], ai[e], real[b], imag[b], real[b + nr], imag[b + nr], hermitian, false, wide);
             real[b] = r; imag[b] = i; real[b + nr] = s; imag[b + nr] = j;
         }
         k += step;
@@ -252,7 +252,7 @@ pub(super) fn solve<F: Float>(ar: &Array<F>, ai: &Array<F>, pivots: &Array<i32>,
             let mut r = real[p]; let mut i = imag[p];
             for row in k..n {
                 let a = matrix + row * n + column; let b = base + row * nr + col; let mut ii = ai[a]; if comptime!(hermitian) { ii = -ii; }
-                let (pr, pi) = product(ar[a], ii, real[b], imag[b]); r -= pr; i -= pi;
+                let (pr, pi) = product::<F>(ar[a], ii, real[b], imag[b]); r -= pr; i -= pi;
             }
             real[p] = r; imag[p] = i;
         }

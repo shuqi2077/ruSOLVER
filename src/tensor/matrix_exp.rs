@@ -136,13 +136,13 @@ pub fn exp<R: Runtime>(a: &Matrix<R>, complex_input: bool) -> Result<Exponential
         let work_dtype = if a.real.dtype == DType::F64 { DType::F64 } else { DType::F32 };
         let real = alloc(&a.real, [count], work_dtype);
         let imag = alloc(&a.real, [if complex_input { count } else { 0 }], work_dtype);
-        macro_rules! run { ($s:ty, $f:ty, $wide:expr) => {
+        macro_rules! run { ($s:ty, $f:ty, $wide:expr) => {{
             kernels::evaluate::launch::<$s, $f, R>(&a.real.client, grid(batch), RudaDim::new_1d(256),
                 a.real.clone().into_tensor_arg(), a.imag.clone().into_tensor_arg(),
                 real.clone().into_array_arg(), imag.clone().into_array_arg(),
                 value.real.clone().into_array_arg(), value.imag.clone().into_array_arg(),
                 n as u32, batch as u32, complex_input, $wide, t8_coefficients($wide));
-        }; }
+        }}; }
         match a.real.dtype {
             DType::F16 => run!(f16, f32, false), DType::BF16 => run!(bf16, f32, false),
             DType::F32 => run!(f32, f32, false), DType::F64 => run!(f64, f64, true), _ => unreachable!(),

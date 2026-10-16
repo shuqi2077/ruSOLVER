@@ -66,11 +66,11 @@ pub(super) fn initialize<R: Runtime>(a: &Matrix<R>, out: &Matrix<R>, info: &Ruda
     let count = out.real.meta.num_elements().max(info.meta.num_elements());
     if count == 0 { return 0; }
     let sizes = out.real.meta.shape(); let m = sizes[1] as u32; let n = sizes[2] as u32;
-    macro_rules! run { ($f:ty) => {
+    macro_rules! run { ($f:ty) => {{
         kernels::initialize::launch::<$f, R>(&a.real.client, grid(count.div_ceil(256)), RudaDim::new_1d(256),
             a.real.clone().into_tensor_arg(), a.imag.clone().into_tensor_arg(), out.real.clone().into_array_arg(),
             out.imag.clone().into_array_arg(), info.clone().into_array_arg(), m, n, mode, upper);
-    }; }
+    }}; }
     match a.real.dtype { DType::F32 => run!(f32), DType::F64 => run!(f64), _ => unreachable!() }
     1
 }
@@ -91,7 +91,7 @@ pub fn lu_factor<R: Runtime>(a: &Matrix<R>, pivot: bool) -> Result<Lu<R>, Device
     result.submitted_kernels += initialize(a, &result.packed, &result.info, 0, false);
     if batch == 0 { return Ok(result); }
     for j in 0..k {
-        macro_rules! run { ($f:ty, $wide:expr) => {
+        macro_rules! run { ($f:ty, $wide:expr) => {{
             kernels::lu_panel::launch::<$f, R>(&a.real.client, grid(batch), RudaDim::new_1d(256),
                 result.packed.real.clone().into_array_arg(), result.packed.imag.clone().into_array_arg(),
                 result.pivots.clone().into_array_arg(), result.info.clone().into_array_arg(), m as u32, n as u32, j as u32, pivot, $wide);
@@ -100,7 +100,7 @@ pub fn lu_factor<R: Runtime>(a: &Matrix<R>, pivot: bool) -> Result<Lu<R>, Device
                     result.packed.real.clone().into_array_arg(), result.packed.imag.clone().into_array_arg(), result.info.clone().into_array_arg(),
                     m as u32, n as u32, j as u32, false);
             }
-        }; }
+        }}; }
         match a.real.dtype { DType::F32 => run!(f32, false), DType::F64 => run!(f64, true), _ => unreachable!() }
         result.submitted_kernels += 1 + usize::from(j + 1 < m && j + 1 < n);
     }
@@ -114,7 +114,7 @@ pub fn cholesky_factor<R: Runtime>(a: &Matrix<R>, upper: bool) -> Result<Factor<
     result.submitted_kernels += initialize(a, &result.factor, &result.info, 1, upper);
     if batch == 0 { return Ok(result); }
     for j in 0..n {
-        macro_rules! run { ($f:ty) => {
+        macro_rules! run { ($f:ty) => {{
             kernels::cholesky_panel::launch::<$f, R>(&a.real.client, grid(batch), RudaDim::new_1d(256),
                 result.factor.real.clone().into_array_arg(), result.factor.imag.clone().into_array_arg(), result.info.clone().into_array_arg(), n as u32, j as u32);
             if j + 1 < n {
@@ -122,7 +122,7 @@ pub fn cholesky_factor<R: Runtime>(a: &Matrix<R>, upper: bool) -> Result<Factor<
                     result.factor.real.clone().into_array_arg(), result.factor.imag.clone().into_array_arg(), result.info.clone().into_array_arg(),
                     n as u32, n as u32, j as u32, true);
             }
-        }; }
+        }}; }
         match a.real.dtype { DType::F32 => run!(f32), DType::F64 => run!(f64), _ => unreachable!() }
         result.submitted_kernels += 1 + usize::from(j + 1 < n);
     }
@@ -150,12 +150,12 @@ fn solve_dispatch<R: Runtime>(
     let mut result = Solution { solution: empty(b, &[batch, n, nrhs])?, info: alloc(&a.real, [batch], DType::I32), submitted_kernels: 0 };
     result.submitted_kernels += initialize(b, &result.solution, &result.info, 0, false);
     if batch != 0 && nrhs != 0 && n != 0 {
-        macro_rules! run { ($f:ty, $wide:expr) => {
+        macro_rules! run { ($f:ty, $wide:expr) => {{
             kernels::solve::launch::<$f, R>(&a.real.client, grid((batch * nrhs).div_ceil(256)), RudaDim::new_1d(256),
                 a.real.clone().into_array_arg(), a.imag.clone().into_array_arg(), p.clone().into_array_arg(),
                 result.solution.real.clone().into_array_arg(), result.solution.imag.clone().into_array_arg(), result.info.clone().into_array_arg(),
                 n as u32, nrhs as u32, pivots.is_some(), upper, transpose, conjugate, unit, $wide);
-        }; }
+        }}; }
         match a.real.dtype { DType::F32 => run!(f32, false), DType::F64 => run!(f64, true), _ => unreachable!() }
         result.submitted_kernels += 1;
     }
@@ -188,12 +188,12 @@ pub fn determinant<R: Runtime>(factor: &Lu<R>) -> Result<Determinant<R>, DeviceS
         log_absolute: alloc(&a.real, [batch], a.real.dtype), submitted_kernels: 0 };
     if batch != 0 {
         let a = contiguous(a); let pivots = into_contiguous(factor.pivots.clone());
-        macro_rules! run { ($f:ty) => {
+        macro_rules! run { ($f:ty) => {{
             kernels::determinant::launch::<$f, R>(&a.real.client, grid(batch.div_ceil(256)), RudaDim::new_1d(256),
                 a.real.clone().into_array_arg(), a.imag.clone().into_array_arg(), pivots.clone().into_array_arg(),
                 result.determinant.real.clone().into_array_arg(), result.determinant.imag.clone().into_array_arg(),
                 result.sign.real.clone().into_array_arg(), result.sign.imag.clone().into_array_arg(), result.log_absolute.clone().into_array_arg(), n as u32);
-        }; }
+        }}; }
         match a.real.dtype { DType::F32 => run!(f32), DType::F64 => run!(f64), _ => unreachable!() }
         result.submitted_kernels += 1;
     }
@@ -207,18 +207,18 @@ pub fn lu_unpack<R: Runtime>(a: &Matrix<R>, pivots: &RudaTensor<R>, data: bool, 
         return Err(DeviceSolverError::InvalidInput("compatible zero-based int32 LU pivots required"));
     }
     let mut result = Unpacked {
-        permutation: empty(a, if permutation { &[batch, m, m] } else { &[0, 0, 0] })?,
-        lower: empty(a, if data { &[batch, m, k] } else { &[0, 0, 0] })?,
-        upper: empty(a, if data { &[batch, k, n] } else { &[0, 0, 0] })?, submitted_kernels: 0,
+        permutation: empty(a, &if permutation { [batch, m, m] } else { [0, 0, 0] })?,
+        lower: empty(a, &if data { [batch, m, k] } else { [0, 0, 0] })?,
+        upper: empty(a, &if data { [batch, k, n] } else { [0, 0, 0] })?, submitted_kernels: 0,
     };
     let a = contiguous(a); let pivots = into_contiguous(pivots.clone());
     for (kind, out) in [&result.permutation, &result.lower, &result.upper].iter().enumerate() {
         let count = out.real.meta.num_elements(); if count == 0 { continue; }
-        macro_rules! run { ($f:ty) => {
+        macro_rules! run { ($f:ty) => {{
             kernels::unpack::launch::<$f, R>(&a.real.client, grid(count.div_ceil(256)), RudaDim::new_1d(256),
                 a.real.clone().into_array_arg(), a.imag.clone().into_array_arg(), pivots.clone().into_array_arg(),
                 out.real.clone().into_array_arg(), out.imag.clone().into_array_arg(), m as u32, n as u32, kind as u32);
-        }; }
+        }}; }
         match a.real.dtype { DType::F32 => run!(f32), DType::F64 => run!(f64), _ => unreachable!() }
         result.submitted_kernels += 1;
     }

@@ -69,7 +69,7 @@ fn maximum<F: Float>(value: F) -> F {
         if lane < width { values[lane] = values[lane].max(values[lane + width]); }
         sync_ruda(); width /= 2;
     }
-    let out = values[0]; sync_ruda(); out
+    let out = values[0usize]; sync_ruda(); out
 }
 
 #[ruda]
@@ -78,20 +78,20 @@ fn norm<F: Float>(real: &Array<F>, imag: &Array<F>, start: usize, length: usize,
     let mut s = F::new(0.0); let mut q = F::new(0.0);
     while i < length {
         let p = start + i * stride;
-        let (s1, q1) = combine_norm(s, q, real[p].abs(), F::new(1.0));
-        let (s2, q2) = combine_norm(s1, q1, imag[p].abs(), F::new(1.0));
+        let (s1, q1) = combine_norm::<F>(s, q, real[p].abs(), F::new(1.0));
+        let (s2, q2) = combine_norm::<F>(s1, q1, imag[p].abs(), F::new(1.0));
         s = s2; q = q2; i += 256;
     }
     let mut scales = SharedMemory::<F>::new(256); let mut sums = SharedMemory::<F>::new(256);
     scales[lane] = s; sums[lane] = q; sync_ruda(); let mut width = 128usize;
     while width > 0 {
         if lane < width {
-            let (s1, q1) = combine_norm(scales[lane], sums[lane], scales[lane + width], sums[lane + width]);
+            let (s1, q1) = combine_norm::<F>(scales[lane], sums[lane], scales[lane + width], sums[lane + width]);
             scales[lane] = s1; sums[lane] = q1;
         }
         sync_ruda(); width /= 2;
     }
-    s = scales[0]; q = sums[0]; sync_ruda(); (s, q)
+    s = scales[0usize]; q = sums[0usize]; sync_ruda(); (s, q)
 }
 
 #[ruda]
@@ -99,18 +99,18 @@ fn complex_sqrt<F: Float>(r: F, i: F, #[comptime] wide: bool) -> (F, F) {
     let s = r.abs().max(i.abs()); let mut x = F::new(0.0); let mut y = F::new(0.0);
     if s != F::new(0.0) {
         let a = r / s; let b = i / s;
-        let t = s.sqrt() * ((magnitude(a, b) + a.abs()) * F::new(0.5)).sqrt();
+        let t = s.sqrt() * ((magnitude::<F>(a, b) + a.abs()) * F::new(0.5)).sqrt();
         if r >= F::new(0.0) { x = t; y = (i / t) * F::new(0.5); }
-        else { x = (i.abs() / t) * F::new(0.5); y = t; if negative(i, wide) { y = -y; } }
+        else { x = (i.abs() / t) * F::new(0.5); y = t; if negative::<F>(i, wide) { y = -y; } }
     }
     (x, y)
 }
 
 #[ruda]
 fn beta<F: Float>(ar: F, ai: F, tail: F, #[comptime] wide: bool) -> F {
-    let (s, q) = combine_norm(ar.abs(), F::new(1.0), ai.abs(), F::new(1.0));
-    let (s, q) = combine_norm(s, q, tail, F::new(1.0));
-    let mut value = -s * q.sqrt(); if negative(ar, wide) { value = -value; } value
+    let (s, q) = combine_norm::<F>(ar.abs(), F::new(1.0), ai.abs(), F::new(1.0));
+    let (s, q) = combine_norm::<F>(s, q, tail, F::new(1.0));
+    let mut value = -s * q.sqrt(); if negative::<F>(ar, wide) { value = -value; } value
 }
 
 #[ruda]
@@ -120,13 +120,13 @@ fn reflector2<F: Float>(ar: F, ai: F, tail: F, #[comptime] wide: bool) -> (F, F,
     let mut vr = tail; let mut vi = F::new(0.0);
     if tail != F::new(0.0) || ai != F::new(0.0) {
         let (eps, tiny) = constants::<F>(wide); let safmin = tiny / (eps * F::new(0.5));
-        value = beta(a, b, x.abs(), wide); let mut count = 0u32;
+        value = beta::<F>(a, b, x.abs(), wide); let mut count = 0u32;
         while value.abs() < safmin && count < 20u32 {
             a /= safmin; b /= safmin; x /= safmin; value /= safmin; count += 1;
         }
-        if count != 0 { value = beta(a, b, x.abs(), wide); }
+        if count != 0 { value = beta::<F>(a, b, x.abs(), wide); }
         tr = (value - a) / value; ti = -b / value;
-        let (r, i) = divide(x, F::new(0.0), a - value, b, wide); vr = r; vi = i;
+        let (r, i) = divide::<F>(x, F::new(0.0), a - value, b, wide); vr = r; vi = i;
         for _ in 0..count { value *= safmin; }
     }
     (value, tr, ti, vr, vi)
@@ -146,7 +146,7 @@ pub(super) fn prepare<F: Float>(
         let r = ar[batch * ar.stride(0) + row * ar.stride(1) + col * ar.stride(2)];
         let i = ai[batch * ai.stride(0) + row * ai.stride(1) + col * ai.stride(2)];
         hr[base + p] = r; hi[base + p] = i;
-        if bad(r) || bad(i) { invalid = F::new(1.0); }
+        if bad::<F>(r) || bad::<F>(i) { invalid = F::new(1.0); }
         largest = largest.max(r.abs()).max(i.abs());
         if comptime!(vectors) {
             let mut v = F::new(0.0); if row == col { v = F::new(1.0); }
@@ -154,7 +154,7 @@ pub(super) fn prepare<F: Float>(
         }
         p += 256;
     }
-    let invalid = maximum(invalid); let largest = maximum(largest);
+    let invalid = maximum::<F>(invalid); let largest = maximum::<F>(largest);
     let (eps, tiny) = constants::<F>(wide); let small = tiny.sqrt() / eps; let big = F::new(1.0) / small;
     let mut target = largest;
     if largest > F::new(0.0) && largest < small { target = small; }
@@ -184,16 +184,16 @@ pub(super) fn balance<F: Float>(
     while changed {
         changed = false;
         for i in 0..n {
-            let (cs, cq) = norm(hr, hi, base + i, n, n);
-            let (rs, rq) = norm(hr, hi, base + i * n, n, 1usize);
+            let (cs, cq) = norm::<F>(hr, hi, base + i, n, n);
+            let (rs, rq) = norm::<F>(hr, hi, base + i * n, n, 1usize);
             let mut c = cs * cq.sqrt(); let mut r = rs * rq.sqrt();
             let mut ca = F::new(0.0); let mut ra = F::new(0.0); let mut j = lane;
             while j < n {
-                ca = ca.max(magnitude(hr[base + j * n + i], hi[base + j * n + i]));
-                ra = ra.max(magnitude(hr[base + i * n + j], hi[base + i * n + j])); j += 256;
+                ca = ca.max(magnitude::<F>(hr[base + j * n + i], hi[base + j * n + i]));
+                ra = ra.max(magnitude::<F>(hr[base + i * n + j], hi[base + i * n + j])); j += 256;
             }
-            ca = maximum(ca); ra = maximum(ra);
-            if bad(c + r + ca + ra) { if lane == 0 { info[batch] = -3; } terminate!(); }
+            ca = maximum::<F>(ca); ra = maximum::<F>(ra);
+            if bad::<F>(c + r + ca + ra) { if lane == 0 { info[batch] = -3; } terminate!(); }
             let mut f = F::new(1.0); let original = c + r; let mut g = r * F::new(0.5);
             if c != F::new(0.0) && r != F::new(0.0) {
                 while c < g && f.max(c).max(ca) < max2 && r.min(g).min(ra) > min2 {
@@ -240,19 +240,19 @@ pub(super) fn hessenberg<F: Float>(
         let first = j + 1; let length = n - first; let mut row = lane;
         while row < length { vr[vbase + row] = hr[base + (first + row) * n + j]; vi[vbase + row] = hi[base + (first + row) * n + j]; row += 256; }
         sync_ruda();
-        let mut ar = vr[vbase]; let mut ai = vi[vbase]; let (s, q) = norm(vr, vi, vbase + 1, length - 1, 1usize);
+        let mut ar = vr[vbase]; let mut ai = vi[vbase]; let (s, q) = norm::<F>(vr, vi, vbase + 1, length - 1, 1usize);
         let mut tail = s * q.sqrt(); let mut b = ar; let mut tr = F::new(0.0); let mut ti = F::new(0.0);
         if tail != F::new(0.0) || ai != F::new(0.0) {
-            b = beta(ar, ai, tail, wide); let mut count = 0u32;
+            b = beta::<F>(ar, ai, tail, wide); let mut count = 0u32;
             while b.abs() < safmin && count < 20u32 {
                 row = lane + 1; while row < length { vr[vbase + row] /= safmin; vi[vbase + row] /= safmin; row += 256; }
                 ar /= safmin; ai /= safmin; b /= safmin; count += 1; sync_ruda();
             }
-            if count != 0 { let (s, q) = norm(vr, vi, vbase + 1, length - 1, 1usize); tail = s * q.sqrt(); b = beta(ar, ai, tail, wide); }
+            if count != 0 { let (s, q) = norm::<F>(vr, vi, vbase + 1, length - 1, 1usize); tail = s * q.sqrt(); b = beta::<F>(ar, ai, tail, wide); }
             tr = (b - ar) / b; ti = -ai / b;
             row = lane + 1;
             while row < length {
-                let (r, i) = divide(vr[vbase + row], vi[vbase + row], ar - b, ai, wide);
+                let (r, i) = divide::<F>(vr[vbase + row], vi[vbase + row], ar - b, ai, wide);
                 vr[vbase + row] = r; vi[vbase + row] = i; row += 256;
             }
             for _ in 0..count { b *= safmin; }
@@ -346,7 +346,7 @@ pub(super) fn schur<F: Float>(
                 }
                 if split { break; } l -= 1;
             }
-            state[0] = l as u32;
+            state[0usize] = l as u32;
             if l > 0 { hr[base + l * n + l - 1] = F::new(0.0); hi[base + l * n + l - 1] = F::new(0.0); }
             if l < i {
                 if iterations > limit { info[batch] = end as i32; }
@@ -357,8 +357,8 @@ pub(super) fn schur<F: Float>(
                     } else if (iterations + 1) % 10usize == 0 {
                         tr = hr[base + l * n + l] + F::new(0.75) * hr[base + (l + 1) * n + l].abs(); ti = hi[base + l * n + l];
                     } else {
-                        let (pr, pi) = complex_sqrt(hr[base + (i - 1) * n + i], hi[base + (i - 1) * n + i], wide);
-                        let (qr, qi) = complex_sqrt(hr[base + i * n + i - 1], hi[base + i * n + i - 1], wide);
+                        let (pr, pi) = complex_sqrt::<F>(hr[base + (i - 1) * n + i], hi[base + (i - 1) * n + i], wide);
+                        let (qr, qi) = complex_sqrt::<F>(hr[base + i * n + i - 1], hi[base + i * n + i - 1], wide);
                         let ur = pr * qr - pi * qi; let ui = pr * qi + pi * qr;
                         let unorm = ur.abs() + ui.abs();
                         if unorm != F::new(0.0) {
@@ -366,10 +366,10 @@ pub(super) fn schur<F: Float>(
                             let xi = F::new(0.5) * (hi[base + (i - 1) * n + i - 1] - ti);
                             let sx = xr.abs() + xi.abs(); let s = unorm.max(sx);
                             let a = xr / s; let b = xi / s; let c = ur / s; let d = ui / s;
-                            let (yr, yi) = complex_sqrt(a * a - b * b + c * c - d * d, F::new(2.0) * (a * b + c * d), wide);
+                            let (yr, yi) = complex_sqrt::<F>(a * a - b * b + c * c - d * d, F::new(2.0) * (a * b + c * d), wide);
                             let mut yr = yr * s; let mut yi = yi * s;
                             if sx > F::new(0.0) && (xr / sx) * yr + (xi / sx) * yi < F::new(0.0) { yr = -yr; yi = -yi; }
-                            let (r, im) = divide(ur, ui, xr + yr, xi + yi, wide);
+                            let (r, im) = divide::<F>(ur, ui, xr + yr, xi + yi, wide);
                             tr -= ur * r - ui * im; ti -= ur * im + ui * r;
                         }
                     }
@@ -379,7 +379,7 @@ pub(super) fn schur<F: Float>(
                         let tail = hr[base + (m + 1) * n + m]; let s = ar.abs() + ai.abs() + tail.abs();
                         let mut vr = F::new(1.0); let mut vi = F::new(0.0); let mut v2 = F::new(0.0);
                         if s != F::new(0.0) { vr = ar / s; vi = ai / s; v2 = tail / s; }
-                        scalars[0] = vr; scalars[1] = vi; scalars[2] = v2;
+                        scalars[0usize] = vr; scalars[1usize] = vi; scalars[2usize] = v2;
                         let mut start = m == l;
                         if m > l {
                             let h10 = hr[base + m * n + m - 1]; let p2 = base + (m + 1) * n + m + 1;
@@ -387,30 +387,30 @@ pub(super) fn schur<F: Float>(
                         }
                         if start { break; } m -= 1;
                     }
-                    state[1] = m as u32;
-                    if bad(tr) || bad(ti) { info[batch] = -3; }
+                    state[1usize] = m as u32;
+                    if bad::<F>(tr) || bad::<F>(ti) { info[batch] = -3; }
                 }
             }
         }
         sync_ruda();
         if info[batch] != 0 { break; }
-        let l = state[0] as usize; sync_ruda();
+        let l = state[0usize] as usize; sync_ruda();
         if l == i { end -= 1; iterations = 0; }
         else {
-            iterations += 1; let m = state[1] as usize;
+            iterations += 1; let m = state[1usize] as usize;
             for k in m..i {
                 if lane == 0 {
-                    let mut ar = scalars[0]; let mut ai = scalars[1]; let mut tail = scalars[2];
+                    let mut ar = scalars[0usize]; let mut ai = scalars[1usize]; let mut tail = scalars[2usize];
                     if k > m { ar = hr[base + k * n + k - 1]; ai = hi[base + k * n + k - 1]; tail = hr[base + (k + 1) * n + k - 1]; }
-                    let (b, tr, ti, vr, vi) = reflector2(ar, ai, tail, wide);
-                    scalars[0] = tr; scalars[1] = ti; scalars[2] = vr; scalars[3] = vi; scalars[4] = tr * vr - ti * vi;
+                    let (b, tr, ti, vr, vi) = reflector2::<F>(ar, ai, tail, wide);
+                    scalars[0usize] = tr; scalars[1usize] = ti; scalars[2usize] = vr; scalars[3usize] = vi; scalars[4usize] = tr * vr - ti * vi;
                     if k > m {
                         hr[base + k * n + k - 1] = b; hi[base + k * n + k - 1] = F::new(0.0);
                         hr[base + (k + 1) * n + k - 1] = F::new(0.0); hi[base + (k + 1) * n + k - 1] = F::new(0.0);
                     }
                 }
                 sync_ruda();
-                let tr = scalars[0]; let ti = scalars[1]; let vr = scalars[2]; let vi = scalars[3]; let t2 = scalars[4];
+                let tr = scalars[0usize]; let ti = scalars[1usize]; let vr = scalars[2usize]; let vi = scalars[3usize]; let t2 = scalars[4usize];
                 let mut col = k + lane;
                 while col < n {
                     let p = base + k * n + col; let q = p + n;
@@ -433,7 +433,7 @@ pub(super) fn schur<F: Float>(
                 }
                 sync_ruda();
                 if k == m && m > l {
-                    let rr = F::new(1.0) - tr; let ii = -ti; let abs = magnitude(rr, ii); let rr = rr / abs; let ii = ii / abs;
+                    let rr = F::new(1.0) - tr; let ii = -ti; let abs = magnitude::<F>(rr, ii); let rr = rr / abs; let ii = ii / abs;
                     if lane == 0 {
                         let p = base + (m + 1) * n + m; let r = hr[p]; let im = hi[p];
                         hr[p] = r * rr + im * ii; hi[p] = im * rr - r * ii;
@@ -469,13 +469,13 @@ pub(super) fn schur<F: Float>(
             }
             if lane == 0 {
                 let p = base + i * n + i - 1; let r = hr[p]; let im = hi[p];
-                scalars[0] = F::new(1.0); scalars[1] = F::new(0.0);
+                scalars[0usize] = F::new(1.0); scalars[1usize] = F::new(0.0);
                 if im != F::new(0.0) {
-                    let a = magnitude(r, im); scalars[0] = r / a; scalars[1] = im / a; hr[p] = a; hi[p] = F::new(0.0);
+                    let a = magnitude::<F>(r, im); scalars[0usize] = r / a; scalars[1usize] = im / a; hr[p] = a; hi[p] = F::new(0.0);
                 }
             }
             sync_ruda();
-            let rr = scalars[0]; let ii = scalars[1]; let mut col = i + 1 + lane;
+            let rr = scalars[0usize]; let ii = scalars[1usize]; let mut col = i + 1 + lane;
             while col < n {
                 let p = base + i * n + col; let r = hr[p]; let im = hi[p];
                 hr[p] = r * rr + im * ii; hi[p] = im * rr - r * ii; col += 256;
@@ -496,13 +496,13 @@ pub(super) fn schur<F: Float>(
         }
     }
     let mut p = lane; let mut invalid = F::new(0.0);
-    while p < n * n { if bad(hr[base + p]) || bad(hi[base + p]) { invalid = F::new(1.0); } p += 256; }
+    while p < n * n { if bad::<F>(hr[base + p]) || bad::<F>(hi[base + p]) { invalid = F::new(1.0); } p += 256; }
     p = lane; let from = scaling[batch * 2 + 1]; let to = scaling[batch * 2];
     while p < n {
         let r = hr[base + p * n + p]; let im = hi[base + p * n + p];
         wr[batch * n + p] = r * (to / from); wi[batch * n + p] = im * (to / from); p += 256;
     }
-    let invalid = maximum(invalid); if lane == 0 && info[batch] == 0 && invalid != F::new(0.0) { info[batch] = -3; }
+    let invalid = maximum::<F>(invalid); if lane == 0 && info[batch] == 0 && invalid != F::new(0.0) { info[batch] = -3; }
 }
 
 #[ruda]
@@ -510,10 +510,10 @@ fn sum<F: Float>(value: F) -> F {
     let lane = UNIT_POS as usize; let mut values = SharedMemory::<F>::new(256);
     values[lane] = value; sync_ruda(); let mut width = 128usize;
     while width > 0 {
-        if lane < width { values[lane] += values[lane + width]; }
+        if lane < width { values[lane] = values[lane] + values[lane + width]; }
         sync_ruda(); width /= 2;
     }
-    let out = values[0]; sync_ruda(); out
+    let out = values[0usize]; sync_ruda(); out
 }
 
 #[ruda(launch)]
@@ -539,15 +539,15 @@ pub(super) fn triangular_vectors<F: Float>(
             let p = base + j * n + k; let q = base + k * n + col;
             rr -= hr[p] * xr[q] - hi[p] * xi[q]; ri -= hr[p] * xi[q] + hi[p] * xr[q]; k += 256;
         }
-        let rr = sum(rr); let ri = sum(ri);
+        let rr = sum::<F>(rr); let ri = sum::<F>(ri);
         let mut dr = hr[base + j * n + j] - lambda_r; let mut di = hi[base + j * n + j] - lambda_i;
         if dr.abs() + di.abs() < smin { dr = smin; di = F::new(0.0); }
         let ds = dr.abs().max(di.abs()); let rs = rr.abs().max(ri.abs());
         let mut scale = F::new(1.0); let mut r = rr; let mut im = ri;
         if rs > ds {
             scale = ds / rs;
-            let (a, b) = divide(rr / rs, ri / rs, dr / ds, di / ds, wide); r = a; im = b;
-        } else { let (a, b) = divide(rr, ri, dr, di, wide); r = a; im = b; }
+            let (a, b) = divide::<F>(rr / rs, ri / rs, dr / ds, di / ds, wide); r = a; im = b;
+        } else { let (a, b) = divide::<F>(rr, ri, dr, di, wide); r = a; im = b; }
         let normalize = r.abs().max(im.abs()).max(F::new(1.0));
         k = j + 1 + lane;
         while k <= col {
@@ -579,18 +579,18 @@ pub(super) fn backtransform<F: Float>(
     }
     if info[batch] != 0 { terminate!(); }
     sync_ruda();
-    let (scale, square_sum) = norm(yr, yi, base + col, n, n); let root = square_sum.sqrt();
+    let (scale, square_sum) = norm::<F>(yr, yi, base + col, n, n); let root = square_sum.sqrt();
     let mut phase = SharedMemory::<F>::new(2); let mut index = SharedMemory::<u32>::new(1);
     if lane == 0 {
         let mut largest = F::new(0.0); let mut choice = 0usize;
         for j in 0..n {
-            let p = base + j * n + col; let value = magnitude(yr[p], yi[p]);
+            let p = base + j * n + col; let value = magnitude::<F>(yr[p], yi[p]);
             if value > largest { largest = value; choice = j; }
         }
-        index[0] = choice as u32; phase[0] = yr[base + choice * n + col] / largest; phase[1] = -yi[base + choice * n + col] / largest;
+        index[0usize] = choice as u32; phase[0usize] = yr[base + choice * n + col] / largest; phase[1usize] = -yi[base + choice * n + col] / largest;
     }
     sync_ruda();
-    let pr = phase[0]; let pi = phase[1]; let selected = index[0] as usize; row = lane;
+    let pr = phase[0usize]; let pi = phase[1usize]; let selected = index[0usize] as usize; row = lane;
     while row < n {
         let p = base + row * n + col; let r = (yr[p] / scale) / root; let im = (yi[p] / scale) / root;
         yr[p] = r * pr - im * pi; yi[p] = r * pi + im * pr;
@@ -603,6 +603,6 @@ pub(super) fn check_vectors<F: Float>(real: &Array<F>, imag: &Array<F>, info: &m
     let batch = block(); if batch >= info.len() || info[batch] != 0 { terminate!(); }
     let n = order as usize; let lane = UNIT_POS as usize; let base = batch * n * n;
     let mut p = lane; let mut invalid = F::new(0.0);
-    while p < n * n { if bad(real[base + p]) || bad(imag[base + p]) { invalid = F::new(1.0); } p += 256; }
-    let invalid = maximum(invalid); if lane == 0 && invalid != F::new(0.0) { info[batch] = -3; }
+    while p < n * n { if bad::<F>(real[base + p]) || bad::<F>(imag[base + p]) { invalid = F::new(1.0); } p += 256; }
+    let invalid = maximum::<F>(invalid); if lane == 0 && invalid != F::new(0.0) { info[batch] = -3; }
 }

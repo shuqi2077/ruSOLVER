@@ -11,7 +11,7 @@ fn maximum<F: Float>(value: F) -> F {
         if lane < width { values[lane] = values[lane].max(values[lane + width]); }
         sync_ruda(); width /= 2;
     }
-    let result = values[0]; sync_ruda(); result
+    let result = values[0usize]; sync_ruda(); result
 }
 
 #[ruda]
@@ -62,8 +62,8 @@ fn combine<F: Float>(
 fn add<F: Float>(real: &mut Array<F>, imag: &mut Array<F>, base: usize, size: usize, out: usize, source: usize, #[comptime] complex_input: bool) {
     let mut p = UNIT_POS as usize;
     while p < size {
-        real[base + out * size + p] += real[base + source * size + p];
-        if comptime!(complex_input) { imag[base + out * size + p] += imag[base + source * size + p]; }
+        real[base + out * size + p] = real[base + out * size + p] + real[base + source * size + p];
+        if comptime!(complex_input) { imag[base + out * size + p] = imag[base + out * size + p] + imag[base + source * size + p]; }
         p += 256;
     }
     sync_ruda();
@@ -145,7 +145,7 @@ pub(super) fn evaluate<S: Float, F: Float>(
         }
         norm = norm.max(total); col += 256;
     }
-    norm = maximum(norm); invalid = maximum(invalid);
+    norm = maximum::<F>(norm); invalid = maximum::<F>(invalid);
     if invalid != zero || norm == F::cast_from(f32::INFINITY) {
         p = lane;
         while p < size {
