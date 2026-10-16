@@ -118,7 +118,7 @@ pub(super) fn lu_panel<F: Float>(
     if batch >= info.len() { terminate!(); }
     let lane = UNIT_POS as usize; let m = rows as usize; let n = cols as usize; let j = column as usize;
     let base = batch * m * n; let mut chosen = j;
-    let mut scores = SharedMemory::<F>::new(256); let mut indices = SharedMemory::<u32>::new(256);
+    let mut scores = SharedMemory::<F>::new(256usize); let mut indices = SharedMemory::<u32>::new(256usize);
     if comptime!(pivot) {
         let mut score = F::new(-1.0); let mut index = rows; let mut row = j + lane;
         while row < m {

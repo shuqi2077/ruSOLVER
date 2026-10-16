@@ -86,7 +86,7 @@ pub(super) fn panel<F: Float>(real: &mut Array<F>, imag: &mut Array<F>, pivots: 
         let value = real[base + row * n + k].abs() + imag[base + row * n + k].abs();
         if value > score || value != value && score == score { score = value; index = row; } row += 256;
     }
-    let mut scores = SharedMemory::<F>::new(256); let mut indices = SharedMemory::<u32>::new(256);
+    let mut scores = SharedMemory::<F>::new(256usize); let mut indices = SharedMemory::<u32>::new(256usize);
     scores[lane] = score; indices[lane] = index as u32; sync_ruda(); let mut width = 128usize;
     while width > 0 {
         if lane < width {

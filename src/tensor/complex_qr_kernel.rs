@@ -57,7 +57,7 @@ fn tail_norm<F: Float>(real: &Array<F>, imag: &Array<F>, base: usize, m: usize, 
         let (si, qi) = combine_norm::<F>(sr, qr, imag[p].abs(), F::new(1.0));
         scale = si; sum = qi; row += 256;
     }
-    let mut scales = SharedMemory::<F>::new(256); let mut sums = SharedMemory::<F>::new(256);
+    let mut scales = SharedMemory::<F>::new(256usize); let mut sums = SharedMemory::<F>::new(256usize);
     scales[lane] = scale; sums[lane] = sum; sync_ruda();
     let mut width = 128usize;
     while width > 0 {
@@ -147,7 +147,7 @@ pub(super) fn apply<F: Float>(
         let r = real[out + row * nrhs + col]; let i = imag[out + row * nrhs + col];
         dr += vr * r + vi * i; di += vr * i - vi * r; row += 256;
     }
-    let mut reals = SharedMemory::<F>::new(256); let mut imags = SharedMemory::<F>::new(256);
+    let mut reals = SharedMemory::<F>::new(256usize); let mut imags = SharedMemory::<F>::new(256usize);
     reals[lane] = dr; imags[lane] = di; sync_ruda();
     let mut step = 128usize;
     while step > 0 {
@@ -192,7 +192,7 @@ pub(super) fn residuals<F: Float>(real: &Array<F>, imag: &Array<F>, out: &mut Ar
         let p = (batch * m + row) * nrhs + col;
         value += real[p] * real[p] + imag[p] * imag[p]; row += 256;
     }
-    let mut sums = SharedMemory::<F>::new(256); sums[lane] = value; sync_ruda();
+    let mut sums = SharedMemory::<F>::new(256usize); sums[lane] = value; sync_ruda();
     let mut width = 128usize;
     while width > 0 {
         if lane < width { sums[lane] = sums[lane] + sums[lane + width]; }

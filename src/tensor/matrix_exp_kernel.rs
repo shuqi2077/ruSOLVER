@@ -5,7 +5,7 @@ use ruda_kernel::dsl::prelude::*;
 
 #[ruda]
 fn maximum<F: Float>(value: F) -> F {
-    let lane = UNIT_POS as usize; let mut values = SharedMemory::<F>::new(256);
+    let lane = UNIT_POS as usize; let mut values = SharedMemory::<F>::new(256usize);
     values[lane] = value; sync_ruda(); let mut width = 128usize;
     while width > 0 {
         if lane < width { values[lane] = values[lane].max(values[lane + width]); }
@@ -163,7 +163,7 @@ pub(super) fn evaluate<S: Float, F: Float>(
         t4 = F::cast_from(3.397168839976962e-04f64); t8 = F::cast_from(4.991228871115323e-02f64);
         t12 = F::cast_from(2.996158913811580e-01f64); t18 = F::cast_from(1.090863719290036e+00f64);
     }
-    let mut degree = 18u32;
+    let mut degree: u32 = 18u32;
     if batches == 1 {
         if norm <= t1 { degree = 1; } else if norm <= t2 { degree = 2; }
         else if norm <= t4 { degree = 4; } else if norm <= t8 { degree = 8; } else if norm < t12 { degree = 12; }

@@ -63,7 +63,7 @@ fn magnitude<F: Float>(r: F, i: F) -> F {
 
 #[ruda]
 fn maximum<F: Float>(value: F) -> F {
-    let lane = UNIT_POS as usize; let mut values = SharedMemory::<F>::new(256);
+    let lane = UNIT_POS as usize; let mut values = SharedMemory::<F>::new(256usize);
     values[lane] = value; sync_ruda(); let mut width = 128usize;
     while width > 0 {
         if lane < width { values[lane] = values[lane].max(values[lane + width]); }
@@ -82,7 +82,7 @@ fn norm<F: Float>(real: &Array<F>, imag: &Array<F>, start: usize, length: usize,
         let (s2, q2) = combine_norm::<F>(s1, q1, imag[p].abs(), F::new(1.0));
         s = s2; q = q2; i += 256;
     }
-    let mut scales = SharedMemory::<F>::new(256); let mut sums = SharedMemory::<F>::new(256);
+    let mut scales = SharedMemory::<F>::new(256usize); let mut sums = SharedMemory::<F>::new(256usize);
     scales[lane] = s; sums[lane] = q; sync_ruda(); let mut width = 128usize;
     while width > 0 {
         if lane < width {
@@ -321,7 +321,7 @@ pub(super) fn schur<F: Float>(
     let batch = block(); if batch >= info.len() { terminate!(); }
     let lane = UNIT_POS as usize; let n = order as usize; let base = batch * n * n;
     let (eps, tiny) = constants::<F>(wide); let small = tiny * (F::cast_from(n) / eps);
-    let mut state = SharedMemory::<u32>::new(2); let mut scalars = SharedMemory::<F>::new(6);
+    let mut state = SharedMemory::<u32>::new(2usize); let mut scalars = SharedMemory::<F>::new(6usize);
     let mut end = n; let mut iterations = 0usize; let limit = 30usize * n.max(10usize);
     let eligible = info[batch] == 0; sync_ruda();
     while end > 0 && eligible {
@@ -507,7 +507,7 @@ pub(super) fn schur<F: Float>(
 
 #[ruda]
 fn sum<F: Float>(value: F) -> F {
-    let lane = UNIT_POS as usize; let mut values = SharedMemory::<F>::new(256);
+    let lane = UNIT_POS as usize; let mut values = SharedMemory::<F>::new(256usize);
     values[lane] = value; sync_ruda(); let mut width = 128usize;
     while width > 0 {
         if lane < width { values[lane] = values[lane] + values[lane + width]; }
@@ -580,7 +580,7 @@ pub(super) fn backtransform<F: Float>(
     if info[batch] != 0 { terminate!(); }
     sync_ruda();
     let (scale, square_sum) = norm::<F>(yr, yi, base + col, n, n); let root = square_sum.sqrt();
-    let mut phase = SharedMemory::<F>::new(2); let mut index = SharedMemory::<u32>::new(1);
+    let mut phase = SharedMemory::<F>::new(2usize); let mut index = SharedMemory::<u32>::new(1usize);
     if lane == 0 {
         let mut largest = F::new(0.0); let mut choice = 0usize;
         for j in 0..n {

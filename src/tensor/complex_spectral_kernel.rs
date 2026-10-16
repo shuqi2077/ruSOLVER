@@ -18,7 +18,7 @@ fn bad<F: Float>(x: F) -> bool { x != x || x.abs() == F::cast_from(f32::INFINITY
 
 #[ruda]
 fn maximum<F: Float>(x: F) -> F {
-    let lane = UNIT_POS as usize; let mut work = SharedMemory::<F>::new(256);
+    let lane = UNIT_POS as usize; let mut work = SharedMemory::<F>::new(256usize);
     work[lane] = x; sync_ruda(); let mut width = 128usize;
     while width > 0 {
         if lane < width { work[lane] = F::max(work[lane], work[lane + width]); }
@@ -29,7 +29,7 @@ fn maximum<F: Float>(x: F) -> F {
 
 #[ruda]
 fn sum<F: Float>(x: F) -> F {
-    let lane = UNIT_POS as usize; let mut work = SharedMemory::<F>::new(256);
+    let lane = UNIT_POS as usize; let mut work = SharedMemory::<F>::new(256usize);
     work[lane] = x; sync_ruda(); let mut width = 128usize;
     while width > 0 {
         if lane < width { work[lane] = work[lane] + work[lane + width]; }
@@ -264,7 +264,7 @@ pub(super) fn svd_values<F: Float>(real: &mut Array<F>, imag: &mut Array<F>, val
             let (s, q) = combine_norm::<F>(s, q, imag[p].abs(), F::new(1.0)); scale = s; norm = q; row += 256;
         }
     }
-    let mut scales = SharedMemory::<F>::new(256); let mut norms = SharedMemory::<F>::new(256);
+    let mut scales = SharedMemory::<F>::new(256usize); let mut norms = SharedMemory::<F>::new(256usize);
     scales[lane] = scale; norms[lane] = norm; sync_ruda(); let mut width = 128usize;
     while width > 0 {
         if lane < width { let (s, q) = combine_norm::<F>(scales[lane], norms[lane], scales[lane + width], norms[lane + width]); scales[lane] = s; norms[lane] = q; }
