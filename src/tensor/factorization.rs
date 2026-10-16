@@ -280,13 +280,17 @@ pub fn qr_form_q<R: Runtime>(
     columns: usize,
 ) -> Result<RudaTensor<R>, DeviceSolverError> {
     let (batch, m, n) = shape(packed)?;
+    let k = tau.meta.shape().last().copied().unwrap_or(0);
     if columns > m
+        || k > m.min(n)
+        || tau.meta.num_dims() == 0
         || tau.dtype != packed.dtype
-        || tau.meta.shape().iter().product::<usize>() != batch * m.min(n)
+        || tau.meta.num_elements() != batch * k
         || !packed.client.same_execution_queue(&tau.client)
     {
         return Err(DeviceSolverError::InvalidInput("QR Q/tau shape or queue"));
     }
+    super::elements(&[batch, m, columns])?;
     let tau = into_contiguous(tau.clone());
     let q = alloc(packed, [batch, m, columns], packed.dtype);
     let count = batch * columns;
@@ -301,7 +305,7 @@ pub fn qr_form_q<R: Runtime>(
                 tau.clone().into_array_arg(),
                 q.clone().into_array_arg(),
                 m as u32,
-                n as u32,
+                k as u32,
                 columns as u32,
             ),
             DType::F64 => form_q::launch::<f64, R>(
@@ -312,7 +316,7 @@ pub fn qr_form_q<R: Runtime>(
                 tau.clone().into_array_arg(),
                 q.clone().into_array_arg(),
                 m as u32,
-                n as u32,
+                k as u32,
                 columns as u32,
             ),
             _ => unreachable!(),
@@ -728,11 +732,11 @@ fn form_q<F: Float>(
     tau: &Array<F>,
     q: &mut Array<F>,
     rows: u32,
-    cols: u32,
+    reflectors: u32,
     qcols: u32,
 ) {
     let m = rows as usize;
-    let n = cols as usize;
+    let count = reflectors as usize;
     let nq = qcols as usize;
     let pos = ABSOLUTE_POS;
     let sys = pos / nq;
@@ -748,19 +752,22 @@ fn form_q<F: Float>(
         }
         q[base + i * nq + j] = z;
     }
-    let mut end = m.min(n);
+    let mut end = count;
     while end > 0 {
         let k = end - 1;
-        let mut dot = q[base + k * nq + j];
-        for i in k + 1..m {
-            let wi = sys * w.stride(0) + i * w.stride(1) + k * w.stride(2);
-            dot += w[wi] * q[base + i * nq + j];
-        }
-        dot *= tau[sys * m.min(n) + k];
-        q[base + k * nq + j] -= dot;
-        for i in k + 1..m {
-            let wi = sys * w.stride(0) + i * w.stride(1) + k * w.stride(2);
-            q[base + i * nq + j] -= w[wi] * dot;
+        let factor = tau[sys * count + k];
+        if factor != F::new(0.0) {
+            let mut dot = q[base + k * nq + j];
+            for i in k + 1..m {
+                let wi = sys * w.stride(0) + i * w.stride(1) + k * w.stride(2);
+                dot += w[wi] * q[base + i * nq + j];
+            }
+            dot *= factor;
+            q[base + k * nq + j] -= dot;
+            for i in k + 1..m {
+                let wi = sys * w.stride(0) + i * w.stride(1) + k * w.stride(2);
+                q[base + i * nq + j] -= w[wi] * dot;
+            }
         }
         end -= 1;
     }

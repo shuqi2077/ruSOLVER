@@ -24,7 +24,7 @@ impl Default for DeviceJacobiOptions {
         }
     }
 }
-fn options(o: DeviceJacobiOptions) -> Result<(), DeviceSolverError> {
+pub(super) fn options(o: DeviceJacobiOptions) -> Result<(), DeviceSolverError> {
     if [
         o.absolute_tolerance,
         o.relative_tolerance,

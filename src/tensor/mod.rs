@@ -215,6 +215,31 @@ pub use factorization::{LuFactorResult,QrFactorResult,lu_factor_blocked,qr_facto
 mod linear;
 pub use linear::{LinearSolveResult,CholeskyFactorResult,LeastSquaresResult,DeterminantResult,LuUnpackResult,lu_solve_factor,lu_inverse_factor,triangular_solve,triangular_inverse,identity_matrix,symmetric_from_triangle,cholesky_factor_blocked,cholesky_solve_factor,cholesky_inverse_factor,least_squares_qr,orthogonal_complete,determinant_from_lu,lu_unpack_factor};
 
+#[allow(unsafe_code)]
+mod complex_kernel;
+#[allow(unsafe_code)]
+pub mod complex;
+#[allow(unsafe_code)]
+mod complex_qr_kernel;
+#[allow(unsafe_code)]
+pub mod complex_qr;
+#[allow(unsafe_code)]
+mod complex_spectral_kernel;
+#[allow(unsafe_code)]
+pub mod complex_spectral;
+#[allow(unsafe_code)]
+mod ldl_kernel;
+#[allow(unsafe_code)]
+pub mod ldl;
+#[allow(unsafe_code)]
+mod general_eig_kernel;
+#[allow(unsafe_code)]
+pub mod general_eig;
+#[allow(unsafe_code)]
+mod matrix_exp_kernel;
+#[allow(unsafe_code)]
+pub mod matrix_exp;
+
 #[cfg(feature = "warp-solvers")]
 #[allow(unsafe_code)] // Generated checked launch boundary; no manual unsafe code.
 mod warp_kernel;

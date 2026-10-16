@@ -12,12 +12,13 @@ name = "rusolver"
 [features]
 default = []
 sparse = ["dep:rusparse"]
-tensor = ["dep:ruda-core", "dep:ruda-kernel"]
+tensor = ["dep:ruda-core", "dep:ruda-kernel", "dep:half"]
 warp-solvers = ["tensor"]
 collective = ["dep:ruccl"]
 cuda = ["tensor", "dep:ruda-driver-cuda"]
 
 [dependencies]
+half = { version = "=2.7.1", optional = true }
 ruccl = { version = "0.21.77", package = "ruCCL", path = "../ruCCL", default-features = false, optional = true }
 rusparse = { version = "0.1.97", package = "ruSPARSE", path = "../ruSPARSE", default-features = false, optional = true }
 ruda-core = { version = "0.1.10", path = "../ruda-core", default-features = false, features = ["std", "tensor-host-data"], optional = true }
