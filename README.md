@@ -37,7 +37,7 @@ cargo run --locked -p ruda-solver --example solver-demo
 - [User guide](https://github.com/shuqi2077/RUDA/blob/main/docs/en/libraries/rusolver.md)
 - [Extended numerical science](https://github.com/shuqi2077/RUDA/blob/main/docs/en/libraries/science-extended.md)
 - [Environment setup](https://github.com/shuqi2077/RUDA/blob/main/docs/en/getting-started.md)
-- [Cargo features](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/Cargo.toml) · [Module exports](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/src/lib.rs)
+- [Cargo features](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/Cargo.toml) · [Module exports](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/src/lib.rs)
 
 ## ruSOLVER User Guide
 
@@ -81,11 +81,11 @@ LU uses `P A = L U`; pivot entries record sequential row swaps. QR uses `A[:, pe
 
 Tolerances control numerical pivot and rank decisions; they are not condition-number estimates. QR rejects rank-deficient least squares. SVD supports rank truncation, so its pseudoinverse and minimum-norm solve use the retained singular values. CG requires a fixed symmetric positive-definite operator and positive-definite preconditioner; check `report.converged()` before treating its output as a solution.
 
-Source: [LU](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/src/lu.rs), [QR](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/src/qr.rs), [SVD](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/src/svd.rs), and [CG](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/src/iterative.rs).
+Source: [LU](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/src/lu.rs), [QR](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/src/qr.rs), [SVD](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/src/svd.rs), and [CG](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/src/iterative.rs).
 
 ### 3. Complex and sparse systems
 
-The [advanced example](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/examples/advanced_solver.rs) covers SVD, complex LU, sparse LU, and a solve pullback. The [CSR example](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/examples/sparse_poisson.rs) uses the optional ruSPARSE adapter:
+The [advanced example](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/examples/advanced_solver.rs) covers SVD, complex LU, sparse LU, and a solve pullback. The [CSR example](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/examples/sparse_poisson.rs) uses the optional ruSPARSE adapter:
 
 ```sh
 cargo run --locked -p ruda-solver --example advanced-solver
@@ -118,12 +118,12 @@ Inputs must be unquantized, contiguous, row-major FP32 tensors on the same devic
 
 Call `check_status_sync()` before using results. It synchronizes and reads each system's status; successful submission alone does not establish numerical success. There is no implicit host numerical fallback or LAPACK/cuSOLVER ABI compatibility.
 
-Source: [Device Cholesky](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/src/tensor/mod.rs) and [additional device solvers](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/src/tensor/advanced.rs).
+Source: [Device Cholesky](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/src/tensor/mod.rs) and [additional device solvers](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/src/tensor/advanced.rs).
 
 ### 5. Distributed computation and autodiff
 
 `distributed::distributed_cg` keeps CSR matrix rows local while gathering search vectors and reducing scalar quantities. Feature `collective` provides `RucclCommunicator` over existing ruCCL TCP. This is host FP64 CG, not multi-GPU/RDMA or distributed sparse-direct factorization. Use a dedicated communication session; failed sessions must be replaced before retrying.
 
-`adjoint` provides analytic pullbacks for solve, Cholesky, SVD, symmetric eigen, and fixed-pivot QR. Spectral derivatives require separated spectra; SVD derivatives also require full rank. The optional [`ruda-autodiff/solver-host`](https://github.com/shuqi2077/RUDA/blob/main/ruda-autodiff/src/solver_host.rs) feature connects solve, Cholesky, singular values, and symmetric eigenvalues to the existing first-order FP64 Host graph. It does not provide complex, sparse, distributed, GPU, or higher-order graph derivatives.
+`adjoint` provides analytic pullbacks for solve, Cholesky, SVD, symmetric eigen, and fixed-pivot QR. Spectral derivatives require separated spectra; SVD derivatives also require full rank. The optional [`ruda-autodiff/solver-host`](https://github.com/shuqi2077/RUDA/blob/main/crates/ruda-autodiff/src/solver_host.rs) feature connects solve, Cholesky, singular values, and symmetric eigenvalues to the existing first-order FP64 Host graph. It does not provide complex, sparse, distributed, GPU, or higher-order graph derivatives.
 
-Source: [Distributed CG](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/src/distributed.rs) and [pullbacks](https://github.com/shuqi2077/RUDA/blob/main/ruSOLVER/src/adjoint.rs).
+Source: [Distributed CG](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/src/distributed.rs) and [pullbacks](https://github.com/shuqi2077/RUDA/blob/main/crates/ruSOLVER/src/adjoint.rs).
