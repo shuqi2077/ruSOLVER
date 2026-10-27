@@ -19,11 +19,11 @@ cuda = ["tensor", "dep:ruda-driver-cuda"]
 
 [dependencies]
 half = { version = "=2.7.1", optional = true }
-ruccl = { version = "0.21.85", package = "ruCCL", path = "../ruCCL", default-features = false, optional = true }
-rusparse = { version = "0.1.108", package = "ruSPARSE", path = "../ruSPARSE", default-features = false, optional = true }
+ruccl = { version = "0.21.86", package = "ruCCL", path = "../ruCCL", default-features = false, optional = true }
+rusparse = { version = "0.1.109", package = "ruSPARSE", path = "../ruSPARSE", default-features = false, optional = true }
 ruda-core = { version = "0.1.12", path = "../ruda-core", default-features = false, features = ["std", "tensor-host-data"], optional = true }
-ruda-kernel = { version = "0.1.50", path = "../ruda-kernel", default-features = false, features = ["frontend-std", "library", "device-tensor"], optional = true }
-ruda-driver-cuda = { version = "0.1.108", path = "../ruda-driver/cuda", features = ["direct-ptx"], optional = true }
+ruda-kernel = { version = "0.1.51", path = "../ruda-kernel", default-features = false, features = ["frontend-std", "library", "device-tensor"], optional = true }
+ruda-driver-cuda = { version = "0.1.109", path = "../ruda-driver/cuda", features = ["direct-ptx"], optional = true }
 
 [lints.rust]
 unsafe_code = "deny"
